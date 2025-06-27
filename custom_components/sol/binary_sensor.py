@@ -243,18 +243,24 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             
             # === CALCULATE TODAY'S RISE AND SET TIMES ===
             # Get today's rise and set times for the current thresholds
+            # Start search from beginning of today to ensure we get today's events
+            local_tz = dt_util.get_time_zone(self._time_zone)
+            now_local = now.astimezone(local_tz)
+            today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_start_utc = today_start.astimezone(timezone.utc)
+            
             today_rise = self._sun_helper.get_time_at_elevation(
-                start_dt=now,
+                start_dt=today_start_utc,
                 target_elev=self._current_rising_elev,
                 direction='rising',
-                max_days=365  # Look up to 365 days ahead
+                max_days=1  # Only look for today's event
             )
             
             today_set = self._sun_helper.get_time_at_elevation(
-                start_dt=now,
+                start_dt=today_start_utc,
                 target_elev=self._current_setting_elev,
                 direction='setting',
-                max_days=365  # Look up to 365 days ahead
+                max_days=1  # Only look for today's event
             )
             
             # === CALCULATE NEXT CHANGE TIME ===
@@ -273,11 +279,13 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     next_event_type = "setting"
                 else:
                     # Both events have passed - look for tomorrow's rise
+                    tomorrow_start = today_start + timedelta(days=1)
+                    tomorrow_start_utc = tomorrow_start.astimezone(timezone.utc)
                     tomorrow_rise = self._sun_helper.get_time_at_elevation(
-                        start_dt=today_set + timedelta(minutes=1),  # Start after today's set
+                        start_dt=tomorrow_start_utc,
                         target_elev=self._current_rising_elev,
                         direction='rising',
-                        max_days=365
+                        max_days=1
                     )
                     if tomorrow_rise:
                         next_change = tomorrow_rise
@@ -288,12 +296,14 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     next_change = today_rise
                     next_event_type = "rising"
                 else:
-                    # Rise has passed - look for next rise
+                    # Rise has passed - look for next rise (tomorrow)
+                    tomorrow_start = today_start + timedelta(days=1)
+                    tomorrow_start_utc = tomorrow_start.astimezone(timezone.utc)
                     next_rise = self._sun_helper.get_time_at_elevation(
-                        start_dt=today_rise + timedelta(minutes=1),
+                        start_dt=tomorrow_start_utc,
                         target_elev=self._current_rising_elev,
                         direction='rising',
-                        max_days=365
+                        max_days=365  # Look further ahead since we don't know when next rise occurs
                     )
                     if next_rise:
                         next_change = next_rise
@@ -304,12 +314,14 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     next_change = today_set
                     next_event_type = "setting"
                 else:
-                    # Set has passed - look for next set
+                    # Set has passed - look for next set (tomorrow)
+                    tomorrow_start = today_start + timedelta(days=1)
+                    tomorrow_start_utc = tomorrow_start.astimezone(timezone.utc)
                     next_set = self._sun_helper.get_time_at_elevation(
-                        start_dt=today_set + timedelta(minutes=1),
+                        start_dt=tomorrow_start_utc,
                         target_elev=self._current_setting_elev,
                         direction='setting',
-                        max_days=365
+                        max_days=365  # Look further ahead since we don't know when next set occurs
                     )
                     if next_set:
                         next_change = next_set

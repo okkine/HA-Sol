@@ -65,14 +65,24 @@ class SunHelper:
             elevation = math.degrees(self._sun.alt)
             azimuth = math.degrees(self._sun.az)
             
+            # Normalize -0.0 to 0.0 to avoid displaying negative zero
+            if abs(elevation) < 1e-10:  # Very small values near zero
+                elevation = 0.0
+            if abs(azimuth) < 1e-10:  # Very small values near zero
+                azimuth = 0.0
+            
             # Validate results
             if not (-90 <= elevation <= 90):
                 _LOGGER.warning("Calculated elevation %.2f° is outside valid range [-90, 90]", elevation)
                 elevation = max(-90, min(90, elevation))
             
-            if not (0 <= azimuth <= 360):
+            # Azimuth should be 0-360°, but 360° is equivalent to 0°
+            if azimuth < 0 or azimuth > 360:
                 _LOGGER.warning("Calculated azimuth %.2f° is outside valid range [0, 360]", azimuth)
                 azimuth = azimuth % 360
+            elif azimuth == 360:
+                # Normalize 360° to 0° to avoid confusion
+                azimuth = 0.0
             
             return elevation, azimuth
             
