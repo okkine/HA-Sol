@@ -9,6 +9,7 @@ from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import slugify
 import homeassistant.util.dt as dt_util
 from homeassistant.components.binary_sensor import BinarySensorEntity
+from .const import DOMAIN, NAME
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -342,18 +343,21 @@ class SunHelper:
 class BaseSolEntity:
     """Base class for Sol entities handling common scheduling and update logic."""
     
-    def __init__(self, base_name, unique_suffix, name="Sol"):
+    def __init__(self, base_name, unique_suffix, name=None):
         """
         Initialize base entity with consistent naming conventions.
         
         Args:
             base_name: The descriptive part of the name
             unique_suffix: The unique identifier suffix
-            name: The prefix for entity names
+            name: The prefix for entity names (defaults to NAME from const.py)
         """
+        if name is None:
+            name = NAME
+            
         formatted_name = f"{name} - {base_name}"
         self._attr_name = ' '.join(word.capitalize() for word in formatted_name.split())
-        self._attr_unique_id = f"sol_{slugify(unique_suffix)}"
+        self._attr_unique_id = f"{DOMAIN}_{slugify(unique_suffix)}"
         self._unsub_update = None
         self._attr_available = False  # Start as unavailable until first update
         self._next_update = None

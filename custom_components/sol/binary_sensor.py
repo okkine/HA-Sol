@@ -16,7 +16,8 @@ from .const import (
     CONF_TEMPERATURE,
     DEFAULT_PRESSURE,
     DEFAULT_TEMPERATURE,
-    DOMAIN
+    DOMAIN,
+    NAME
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -100,7 +101,7 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                  seasonally_dynamic, rising_elev, setting_elev, summer_rising, summer_setting, 
                  winter_rising, winter_setting):
         # Initialize base entity
-        super().__init__(user_name, user_name, "Sol")
+        super().__init__(user_name, user_name)
         
         # Store configuration
         self._seasonally_dynamic = seasonally_dynamic

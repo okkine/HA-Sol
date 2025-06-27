@@ -2,6 +2,7 @@
 """Constants for the Sol integration."""
 
 DOMAIN = "sol"
+NAME = "Sol"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"

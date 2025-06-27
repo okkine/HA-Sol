@@ -10,12 +10,10 @@ from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import slugify
 import homeassistant.util.dt as dt_util
 from .helper import SunHelper, BaseSolSensor, SolCalculateSolsticeCurve, SOLSTICE_CURVE_STORE
-from .const import CONF_PRESSURE, CONF_TEMPERATURE, DEFAULT_PRESSURE, DEFAULT_TEMPERATURE, DOMAIN
+from .const import CONF_PRESSURE, CONF_TEMPERATURE, DEFAULT_PRESSURE, DEFAULT_TEMPERATURE, DOMAIN, NAME
 from typing import Literal
 
 _LOGGER = logging.getLogger(__name__)
-
-NAME = "Sol"
 
 # Configuration schema
 PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend({
@@ -93,7 +91,7 @@ class SolElevationSensor(BaseSolSensor):
     
     def __init__(self, step, latitude, longitude, elevation, pressure, temperature):
         # Initialize base entity
-        super().__init__("Elevation", "elevation", NAME)
+        super().__init__("Elevation", "elevation")
         
         self._step = step
         # Create unified sun helper
@@ -218,7 +216,7 @@ class SolSolsticeCurveSensor(BaseSolSensor):
     
     def __init__(self, latitude, longitude, elevation, pressure, temperature, time_zone):
         # Initialize base entity
-        super().__init__("Solstice Curve", "solstice_curve", NAME)
+        super().__init__("Solstice Curve", "solstice_curve")
         
         self._latitude = latitude
         self._longitude = longitude
