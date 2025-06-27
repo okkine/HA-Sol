@@ -157,16 +157,8 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
         try:
             now = now or dt_util.utcnow()
             
-            # === SUN DIRECTION DETECTION ===
-            try:
-                sun_direction = self._sun_helper.sun_direction(now)
-            except Exception as e:
-                _LOGGER.warning("Error getting sun direction: %s. Using elevation trend", e)
-                # Fallback to elevation trend method
-                future = now + timedelta(minutes=5)
-                future_elev = self._sun_helper.calculate_position(future)[0]
-                current_elev = self._sun_helper.calculate_position(now)[0]
-                sun_direction = "rising" if future_elev > current_elev else "setting"
+            # Get sun direction using shared method
+            sun_direction = self._get_sun_direction_with_fallback(now, self._sun_helper)
             
             # === DYNAMIC ELEVATION CALCULATION ===
             if self._seasonally_dynamic:
@@ -211,11 +203,9 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                              self.name, self._current_rising_elev, self._current_setting_elev)
                 return now + timedelta(minutes=5)
             
-            # === CURRENT ELEVATION CALCULATION ===
-            try:
-                current_elev, azimuth = self._sun_helper.calculate_position(now)
-            except Exception as e:
-                _LOGGER.error("Error getting sun position for %s: %s", self.name, e)
+            # Get current elevation using shared method
+            current_elev, azimuth = self._get_current_elevation(now, self._sun_helper)
+            if current_elev is None:
                 return now + timedelta(minutes=5)
             
             # === SIMPLIFIED STATE DETERMINATION ===
@@ -280,30 +270,13 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     )
                     event_type = "setting"
             
-            # === FALLBACK LOGIC ===
+            # Fallback to solar event if needed
             if not next_event:
                 _LOGGER.debug(
                     "No elevation event found for %s (state=%s, direction=%s). Using solar event fallback.",
                     self.name, self._attr_is_on, sun_direction
                 )
-                
-                # Use the same fallback as elevation sensor
-                try:
-                    next_peak = self._sun_helper.get_peak_elevation_time(now)
-                    next_midnight = self._sun_helper.get_next_solar_midnight(now)
-                    
-                    if next_peak and next_midnight:
-                        next_event = min(next_peak, next_midnight)
-                    elif next_peak:
-                        next_event = next_peak
-                    elif next_midnight:
-                        next_event = next_midnight
-                    else:
-                        next_event = now + timedelta(minutes=5)
-                        
-                except Exception as e:
-                    _LOGGER.error("Error getting solar events for fallback: %s", e)
-                    next_event = now + timedelta(minutes=5)
+                next_event = self._get_solar_event_fallback(now, self._sun_helper)
             
             # === UPDATE STATE ATTRIBUTES ===
             # Base attributes for all sensors

@@ -1,7 +1,6 @@
 # sensor.py
 import logging
 import math
-import ephem
 import voluptuous as vol
 from datetime import timedelta, timezone, time
 from homeassistant.helpers import config_validation as cv
@@ -114,27 +113,16 @@ class SolElevationSensor(BaseSolSensor):
         now = now or dt_util.utcnow()
         _LOGGER.debug("Elevation sensor update triggered at %s", now)
         
-        # Get current elevation and azimuth using helper
-        current_elev, current_azimuth = self._sun_helper.calculate_position(now)
+        # Get current elevation and azimuth using shared method
+        current_elev, current_azimuth = self._get_current_elevation(now, self._sun_helper)
+        if current_elev is None:
+            return now + timedelta(minutes=5)
         
         # Update state values
         self._attr_native_value = round(current_elev, 2)
-        self._attr_available = True
         
-        # === DIRECTION DETECTION ===
-        try:
-            direction = self._sun_helper.sun_direction(now)
-            if direction not in ["rising", "setting"]:
-                raise ValueError(f"Invalid direction: {direction}")
-            _LOGGER.debug("Sun direction determined: %s (elevation: %.2f°)", direction, current_elev)
-        except Exception as e:
-            _LOGGER.error("Error determining sun direction: %s", e)
-            # Fallback to elevation trend method
-            future = now + timedelta(minutes=15)
-            future_elev, _ = self._sun_helper.calculate_position(future)
-            current_elev, _ = self._sun_helper.calculate_position(now)
-            direction = "rising" if future_elev > current_elev else "setting"
-            _LOGGER.debug("Using fallback direction: %s (%.2f° -> %.2f°)", direction, current_elev, future_elev)
+        # Get sun direction using shared method
+        direction = self._get_sun_direction_with_fallback(now, self._sun_helper)
         
         # STORE THE DIRECTION FOR STATE ATTRIBUTES
         self._current_direction = direction
@@ -172,32 +160,7 @@ class SolElevationSensor(BaseSolSensor):
                 "Current elevation: %.2f°. Using solar event fallback.",
                 next_target, direction, current_elev
             )
-            
-            # Try to get next solar events (both noon and midnight)
-            try:
-                next_noon = self._sun_helper.get_next_solar_noon(now)
-                next_midnight = self._sun_helper.get_next_solar_midnight(now)
-                
-                # Choose the earlier event
-                if next_noon and next_midnight:
-                    event_time = min(next_noon, next_midnight)
-                    _LOGGER.debug("Using earlier solar event: %s (noon: %s, midnight: %s)", 
-                                 event_time, next_noon, next_midnight)
-                elif next_noon:
-                    event_time = next_noon
-                    _LOGGER.debug("Using next solar noon: %s", event_time)
-                elif next_midnight:
-                    event_time = next_midnight
-                    _LOGGER.debug("Using next solar midnight: %s", event_time)
-                else:
-                    # Emergency fallback
-                    event_time = now + timedelta(minutes=5)
-                    _LOGGER.warning("No solar events found, using emergency fallback: %s", event_time)
-                    
-            except Exception as e:
-                _LOGGER.error("Error getting solar events for fallback: %s", e)
-                event_time = now + timedelta(minutes=5)
-                _LOGGER.debug("Using emergency fallback update at %s", event_time)
+            event_time = self._get_solar_event_fallback(now, self._sun_helper)
         
         _LOGGER.debug(
             "Current: %.2f° (azimuth: %.2f°), Direction: %s, Target: %.2f°",
@@ -274,7 +237,6 @@ class SolSolsticeCurveSensor(BaseSolSensor):
             
             # Update state and attributes
             self._attr_native_value = round(normalized, 8)
-            self._attr_available = True
             self._attr_extra_state_attributes = {
                 "previous_solstice": prev_solstice.isoformat(),
                 "next_solstice": next_solstice.isoformat(),
@@ -288,7 +250,6 @@ class SolSolsticeCurveSensor(BaseSolSensor):
             
         except Exception as e:
             _LOGGER.error("Error updating solstice curve: %s", e, exc_info=True)
-            self._attr_available = False
             return now + timedelta(minutes=15)  # Retry in 15 minutes
         
         # Schedule next update at fixed local times (noon and midnight)

@@ -32,6 +32,24 @@ class SunHelper:
         self.pressure = pressure
         self.temperature = temperature
         self.search_increment = timedelta(hours=1)
+        
+        # Cache the sun object for reuse
+        self._sun = ephem.Sun()
+
+    def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:
+        """Create and configure an ephem observer with current settings."""
+        observer = ephem.Observer()
+        observer.lat = str(self.latitude)
+        observer.lon = str(self.longitude)
+        observer.elevation = self.elevation
+        observer.pressure = self.pressure
+        observer.temp = self.temperature
+        
+        if date_time is not None:
+            utc_time = date_time.astimezone(timezone.utc).replace(tzinfo=None)
+            observer.date = ephem.Date(utc_time)
+            
+        return observer
 
     # === POSITION CALCULATION ===
     def calculate_position(self, date_time: Optional[datetime] = None) -> tuple[float, float]:
@@ -40,21 +58,12 @@ class SunHelper:
             date_time = datetime.now(timezone.utc)
         
         try:
-            utc_time = date_time.astimezone(timezone.utc).replace(tzinfo=None)
+            observer = self._setup_observer(date_time)
             
-            observer = ephem.Observer()
-            observer.lat = str(self.latitude)
-            observer.lon = str(self.longitude)
-            observer.elevation = self.elevation
-            observer.pressure = self.pressure
-            observer.temp = self.temperature
-            observer.date = ephem.Date(utc_time)
+            self._sun.compute(observer)
             
-            sun = ephem.Sun()
-            sun.compute(observer)
-            
-            elevation = math.degrees(sun.alt)
-            azimuth = math.degrees(sun.az)
+            elevation = math.degrees(self._sun.alt)
+            azimuth = math.degrees(self._sun.az)
             
             # Validate results
             if not (-90 <= elevation <= 90):
@@ -100,27 +109,19 @@ class SunHelper:
     def _get_solar_event(self, dt: datetime, direction: str, event_type: str) -> datetime:
         """Get solar event time using ephem."""
         dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        observer = ephem.Observer()
-        observer.lat = str(self.latitude)
-        observer.lon = str(self.longitude)
-        observer.elevation = self.elevation
-        observer.pressure = self.pressure
-        observer.temp = self.temperature
-        observer.date = ephem.Date(dt_utc)
-        
-        sun = ephem.Sun()
+        observer = self._setup_observer(dt_utc)
         
         try:
             if event_type == "transit":
                 if direction == "previous":
-                    event_time = observer.previous_transit(sun)
+                    event_time = observer.previous_transit(self._sun)
                 else:  # next
-                    event_time = observer.next_transit(sun)
+                    event_time = observer.next_transit(self._sun)
             else:  # antitransit
                 if direction == "previous":
-                    event_time = observer.previous_antitransit(sun)
+                    event_time = observer.previous_antitransit(self._sun)
                 else:  # next
-                    event_time = observer.next_antitransit(sun)
+                    event_time = observer.next_antitransit(self._sun)
                     
             return event_time.datetime().replace(tzinfo=timezone.utc)
         except Exception as e:
@@ -135,25 +136,17 @@ class SunHelper:
     def get_peak_elevation_time(self, dt: datetime) -> datetime:
         """Get the time when the sun reaches its maximum elevation for the day."""
         dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        observer = ephem.Observer()
-        observer.lat = str(self.latitude)
-        observer.lon = str(self.longitude)
-        observer.elevation = self.elevation
-        observer.pressure = self.pressure
-        observer.temp = self.temperature
-        observer.date = ephem.Date(dt_utc)
-        
-        sun = ephem.Sun()
+        observer = self._setup_observer(dt_utc)
         
         try:
             # Get the next transit (solar noon) which is when the sun reaches peak elevation
-            peak_time = observer.next_transit(sun)
+            peak_time = observer.next_transit(self._sun)
             peak_dt = peak_time.datetime().replace(tzinfo=timezone.utc)
             
             # Verify this is actually the peak by checking if it's the next transit after our start time
             if peak_dt < dt.astimezone(timezone.utc):
                 # If the next transit is before our start time, get the previous one
-                peak_time = observer.previous_transit(sun)
+                peak_time = observer.previous_transit(self._sun)
                 peak_dt = peak_time.datetime().replace(tzinfo=timezone.utc)
             
             _LOGGER.debug("Peak elevation time calculated: %s", peak_dt)
@@ -184,12 +177,7 @@ class SunHelper:
         start_dt_utc = start_dt.astimezone(timezone.utc)
         naive_start_dt_utc = start_dt_utc.replace(tzinfo=None)
         
-        observer = ephem.Observer()
-        observer.lat = str(self.latitude)
-        observer.lon = str(self.longitude)
-        observer.elevation = self.elevation
-        observer.pressure = self.pressure
-        observer.temp = self.temperature
+        observer = self._setup_observer(naive_start_dt_utc)
         
         if max_days > 0:
             end_date = naive_start_dt_utc + timedelta(days=max_days)
@@ -197,7 +185,7 @@ class SunHelper:
             end_date = naive_start_dt_utc + timedelta(days=365)
         
         current_date = naive_start_dt_utc
-        sun = ephem.Sun()
+        sun = self._sun
         always_up_count = 0
         never_up_count = 0
         
@@ -337,7 +325,9 @@ class SunHelper:
             future = cur_dttm + timedelta(minutes=15)
             future_elev = self.calculate_position(future)[0]
             current_elev = self.calculate_position(cur_dttm)[0]
-            return "rising" if future_elev > current_elev else "setting"
+            direction = "rising" if future_elev > current_elev else "setting"
+            _LOGGER.debug("Using fallback direction: %s (%.2f° -> %.2f°)", direction, current_elev, future_elev)
+            return direction
 
 
 class BaseSolEntity:
@@ -391,34 +381,53 @@ class BaseSolEntity:
     async def async_update(self, now=None):
         """Common update logic and scheduling."""
         try:
+            # Call sensor-specific update logic
             next_update_time = await self._async_update_logic(now)
             self._next_update = next_update_time
             
+            # Handle scheduling
             if next_update_time:
+                # Ensure we don't schedule in the past
                 if next_update_time <= dt_util.utcnow():
                     next_update_time = dt_util.utcnow() + timedelta(seconds=5)
                     _LOGGER.warning("Rescheduling %s to %s", self.name, next_update_time)
                 
+                # Cancel existing update before scheduling new one
                 self.cancel_scheduled_update()
+                
+                # Schedule next update
                 self._unsub_update = async_track_point_in_time(
                     self.hass, self.async_update, next_update_time
                 )
                 _LOGGER.debug("Scheduled next update for %s at %s", self.name, next_update_time)
+            else:
+                # No update time returned - cancel any existing updates
+                self.cancel_scheduled_update()
+                _LOGGER.warning("No update time returned for %s", self.name)
             
             # Set entity as available after successful update
             self._attr_available = True
             
+            # Write state to Home Assistant
             if self.entity_id:
                 self.async_write_ha_state()
                 
         except Exception as e:
             _LOGGER.error("Error updating %s: %s", self.name, e, exc_info=True)
+            
+            # Set entity as unavailable on error
             self._attr_available = False
+            
+            # Schedule retry in 5 minutes
             next_update_time = dt_util.utcnow() + timedelta(minutes=5)
+            
+            # Cancel existing update and schedule retry
             self.cancel_scheduled_update()
             self._unsub_update = async_track_point_in_time(
                 self.hass, self.async_update, next_update_time
             )
+            
+            # Write state to Home Assistant
             if self.entity_id:
                 self.async_write_ha_state()
 
@@ -428,6 +437,60 @@ class BaseSolEntity:
         Should return the next update time or None if no scheduling needed.
         """
         raise NotImplementedError("Subclasses must implement this method")
+
+    def _get_sun_direction_with_fallback(self, now, sun_helper):
+        """Get sun direction with fallback to elevation trend method."""
+        try:
+            direction = sun_helper.sun_direction(now)
+            if direction not in ["rising", "setting"]:
+                raise ValueError(f"Invalid direction: {direction}")
+            _LOGGER.debug("Sun direction determined: %s", direction)
+            return direction
+        except Exception as e:
+            _LOGGER.warning("Error getting sun direction: %s. Using elevation trend", e)
+            # Fallback to elevation trend method - reuse current elevation if available
+            future = now + timedelta(minutes=5)
+            future_elev = sun_helper.calculate_position(future)[0]
+            current_elev = sun_helper.calculate_position(now)[0]
+            direction = "rising" if future_elev > current_elev else "setting"
+            _LOGGER.debug("Using fallback direction: %s (%.2f° -> %.2f°)", direction, current_elev, future_elev)
+            return direction
+
+    def _get_current_elevation(self, now, sun_helper):
+        """Get current elevation with error handling."""
+        try:
+            current_elev, azimuth = sun_helper.calculate_position(now)
+            return current_elev, azimuth
+        except Exception as e:
+            _LOGGER.error("Error getting sun position: %s", e)
+            return None, None
+
+    def _get_solar_event_fallback(self, now, sun_helper):
+        """Get solar event fallback when elevation events are not found."""
+        try:
+            next_peak = sun_helper.get_peak_elevation_time(now)
+            next_midnight = sun_helper.get_next_solar_midnight(now)
+            
+            if next_peak and next_midnight:
+                event_time = min(next_peak, next_midnight)
+                _LOGGER.debug("Using earlier solar event: %s (peak: %s, midnight: %s)", 
+                             event_time, next_peak, next_midnight)
+            elif next_peak:
+                event_time = next_peak
+                _LOGGER.debug("Using next peak elevation: %s", event_time)
+            elif next_midnight:
+                event_time = next_midnight
+                _LOGGER.debug("Using next solar midnight: %s", event_time)
+            else:
+                # Emergency fallback
+                event_time = now + timedelta(minutes=5)
+                _LOGGER.warning("No solar events found, using emergency fallback: %s", event_time)
+                
+            return event_time
+            
+        except Exception as e:
+            _LOGGER.error("Error getting solar events for fallback: %s", e)
+            return now + timedelta(minutes=5)
 
 class BaseSolSensor(BaseSolEntity, SensorEntity):
     """Base class for Sol sensor entities."""
@@ -449,6 +512,24 @@ class SolCalculateSolsticeCurve:
         self.elevation = elevation
         self.pressure = pressure
         self.temperature = temperature
+        
+        # Cache the sun object for reuse
+        self._sun = ephem.Sun()
+
+    def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:
+        """Create and configure an ephem observer with current settings."""
+        observer = ephem.Observer()
+        observer.lat = str(self.latitude)
+        observer.lon = str(self.longitude)
+        observer.elevation = self.elevation
+        observer.pressure = self.pressure
+        observer.temp = self.temperature
+        
+        if date_time is not None:
+            utc_time = date_time.astimezone(timezone.utc).replace(tzinfo=None)
+            observer.date = ephem.Date(utc_time)
+            
+        return observer
 
     def get_normalized_curve(self, date_time: datetime = None) -> tuple[float, datetime, datetime]:
         """Calculate normalized solstice curve (0-1) and adjacent solstices.
@@ -463,13 +544,7 @@ class SolCalculateSolsticeCurve:
             date_time = date_time.astimezone(timezone.utc)
         
         # Create observer
-        observer = ephem.Observer()
-        observer.lat = str(self.latitude)
-        observer.lon = str(self.longitude)
-        observer.elevation = self.elevation
-        observer.pressure = self.pressure
-        observer.temp = self.temperature
-        observer.date = ephem.Date(date_time)
+        observer = self._setup_observer(date_time)
         
         # Find solstices
         next_summer = ephem.next_summer_solstice(observer.date)
@@ -516,7 +591,6 @@ class SolCalculateSolsticeCurve:
     def _get_solar_declination(self, dt: datetime) -> float:
         """Calculate solar declination in degrees for a given datetime."""
         # Create temporary observer
-        observer = ephem.Observer()
-        observer.date = ephem.Date(dt)
-        sun = ephem.Sun(observer)
-        return math.degrees(sun.dec)
+        observer = self._setup_observer(dt)
+        self._sun.compute(observer)
+        return math.degrees(self._sun.dec)
