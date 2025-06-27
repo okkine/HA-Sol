@@ -150,6 +150,9 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             "next_event_type": None
         }
         
+        # Initialize state as None - will be set on first update
+        self._attr_is_on = None
+        
         _LOGGER.debug("Initialized binary elevation sensor: %s (dynamic: %s)", 
                      user_name, seasonally_dynamic)
 
@@ -208,8 +211,11 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             if current_elev is None:
                 return now + timedelta(minutes=5)
             
-            # === SIMPLIFIED STATE DETERMINATION ===
-            # State depends on sun direction and appropriate threshold
+            # === CORRECT STATE DETERMINATION ===
+            # State depends on sun direction and appropriate threshold:
+            # - During RISING phase: ON if above RISING threshold (higher threshold)
+            # - During SETTING phase: ON if above SETTING threshold (lower threshold)
+            # This creates hysteresis to prevent rapid state changes around transitions
             if sun_direction == "rising":
                 # During rising phase: ON if above rising threshold
                 new_state = current_elev >= self._current_rising_elev
@@ -219,6 +225,14 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                 new_state = current_elev >= self._current_setting_elev
                 threshold_used = self._current_setting_elev
             
+            # Debug logging for state determination
+            _LOGGER.debug(
+                "%s state determination: direction=%s, elev=%.2f°, rising_threshold=%.2f°, "
+                "setting_threshold=%.2f°, threshold_used=%.2f°, new_state=%s, current_state=%s",
+                self.name, sun_direction, current_elev, self._current_rising_elev,
+                self._current_setting_elev, threshold_used, new_state, self._attr_is_on
+            )
+            
             # Check if state changed
             if self._attr_is_on != new_state:
                 self._attr_is_on = new_state
@@ -227,66 +241,114 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     self.name, new_state, current_elev, threshold_used, sun_direction
                 )
             
-            # === SIMPLIFIED NEXT EVENT CALCULATION ===
-            # Get the next event based on current state and direction
-            if self._attr_is_on:
-                # When ON: next event is when we go below the appropriate threshold
-                if sun_direction == "rising":
-                    # Currently rising and ON - next event is when we go below setting threshold
-                    next_event = self._sun_helper.get_time_at_elevation(
-                        start_dt=now,
-                        target_elev=self._current_setting_elev,
-                        direction='setting',
-                        max_days=1
-                    )
-                    event_type = "setting"
-                else:
-                    # Currently setting and ON - next event is when we go below rising threshold (next day)
-                    next_event = self._sun_helper.get_time_at_elevation(
-                        start_dt=now,
-                        target_elev=self._current_rising_elev,
-                        direction='rising',
-                        max_days=1
-                    )
-                    event_type = "rising"
-            else:
-                # When OFF: next event is when we go above the appropriate threshold
-                if sun_direction == "rising":
-                    # Currently rising and OFF - next event is when we go above rising threshold
-                    next_event = self._sun_helper.get_time_at_elevation(
-                        start_dt=now,
-                        target_elev=self._current_rising_elev,
-                        direction='rising',
-                        max_days=1
-                    )
-                    event_type = "rising"
-                else:
-                    # Currently setting and OFF - next event is when we go above setting threshold
-                    next_event = self._sun_helper.get_time_at_elevation(
-                        start_dt=now,
-                        target_elev=self._current_setting_elev,
-                        direction='setting',
-                        max_days=1
-                    )
-                    event_type = "setting"
+            # === CALCULATE TODAY'S RISE AND SET TIMES ===
+            # Get today's rise and set times for the current thresholds
+            today_rise = self._sun_helper.get_time_at_elevation(
+                start_dt=now,
+                target_elev=self._current_rising_elev,
+                direction='rising',
+                max_days=365  # Look up to 365 days ahead
+            )
             
-            # Fallback to solar event if needed
-            if not next_event:
-                _LOGGER.debug(
-                    "No elevation event found for %s (state=%s, direction=%s). Using solar event fallback.",
-                    self.name, self._attr_is_on, sun_direction
+            today_set = self._sun_helper.get_time_at_elevation(
+                start_dt=now,
+                target_elev=self._current_setting_elev,
+                direction='setting',
+                max_days=365  # Look up to 365 days ahead
+            )
+            
+            # === CALCULATE NEXT CHANGE TIME ===
+            next_change = None
+            next_event_type = None
+            
+            if today_rise and today_set:
+                # Both events exist - determine which comes next
+                if now < today_rise:
+                    # Next event is today's rise
+                    next_change = today_rise
+                    next_event_type = "rising"
+                elif now < today_set:
+                    # Next event is today's set
+                    next_change = today_set
+                    next_event_type = "setting"
+                else:
+                    # Both events have passed - look for tomorrow's rise
+                    tomorrow_rise = self._sun_helper.get_time_at_elevation(
+                        start_dt=today_set + timedelta(minutes=1),  # Start after today's set
+                        target_elev=self._current_rising_elev,
+                        direction='rising',
+                        max_days=365
+                    )
+                    if tomorrow_rise:
+                        next_change = tomorrow_rise
+                        next_event_type = "rising"
+            elif today_rise:
+                # Only rise event exists
+                if now < today_rise:
+                    next_change = today_rise
+                    next_event_type = "rising"
+                else:
+                    # Rise has passed - look for next rise
+                    next_rise = self._sun_helper.get_time_at_elevation(
+                        start_dt=today_rise + timedelta(minutes=1),
+                        target_elev=self._current_rising_elev,
+                        direction='rising',
+                        max_days=365
+                    )
+                    if next_rise:
+                        next_change = next_rise
+                        next_event_type = "rising"
+            elif today_set:
+                # Only set event exists
+                if now < today_set:
+                    next_change = today_set
+                    next_event_type = "setting"
+                else:
+                    # Set has passed - look for next set
+                    next_set = self._sun_helper.get_time_at_elevation(
+                        start_dt=today_set + timedelta(minutes=1),
+                        target_elev=self._current_setting_elev,
+                        direction='setting',
+                        max_days=365
+                    )
+                    if next_set:
+                        next_change = next_set
+                        next_event_type = "setting"
+            
+            # If no events found within 365 days, mark as unknown
+            if not next_change:
+                _LOGGER.warning(
+                    "No elevation events found for %s within 365 days. "
+                    "Sun may never reach target elevations at this location.",
+                    self.name
                 )
-                next_event = self._get_solar_event_fallback(now, self._sun_helper)
+                next_change = None
+                next_event_type = "unknown"
+            
+            # === DETERMINE NEXT UPDATE TIME ===
+            next_update = None
+            
+            if next_change:
+                # Update at the next change time
+                next_update = next_change
+            else:
+                # No events found - update at midnight local time to check for new day
+                local_tz = dt_util.get_time_zone(self._time_zone)
+                now_local = now.astimezone(local_tz)
+                midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+                next_update = midnight_local.astimezone(timezone.utc)
             
             # === UPDATE STATE ATTRIBUTES ===
             # Base attributes for all sensors
             attributes = {
-                "next_change": next_event.isoformat() if next_event else None,
+                "rising": today_rise.isoformat() if today_rise else "unknown",
+                "setting": today_set.isoformat() if today_set else "unknown",
+                "next_change": next_change.isoformat() if next_change else "unknown",
                 "current_rising_elevation": self._current_rising_elev,
                 "current_setting_elevation": self._current_setting_elev,
                 "seasonally_dynamic": self._seasonally_dynamic,
                 "sun_direction": sun_direction,
-                "next_event_type": event_type
+                "next_event_type": next_event_type
             }
             
             # Add solstice curve only for dynamic sensors
@@ -296,16 +358,17 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             self._attr_extra_state_attributes = attributes
             
             _LOGGER.debug(
-                "%s: state=%s, elev=%.2f°, rising=%.2f°, setting=%.2f°, next_change=%s (%s)",
+                "%s: state=%s, elev=%.2f°, rising=%.2f°, setting=%.2f°, "
+                "today_rise=%s, today_set=%s, next_change=%s (%s)",
                 self.name, self._attr_is_on, current_elev, 
                 self._current_rising_elev, self._current_setting_elev,
-                next_event.isoformat() if next_event else "None",
-                event_type
+                today_rise.isoformat() if today_rise else "None",
+                today_set.isoformat() if today_set else "None",
+                next_change.isoformat() if next_change else "None",
+                next_event_type
             )
             
-            # === DIRECT SCHEDULING ===
-            # Use the exact event time, just like the elevation sensor
-            return next_event
+            return next_update
                 
         except Exception as e:
             _LOGGER.error("Error updating %s: %s", self.name, e, exc_info=True)
