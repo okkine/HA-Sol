@@ -249,6 +249,7 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
             today_start_utc = today_start.astimezone(timezone.utc)
             
+            # First try to get today's events
             today_rise = self._sun_helper.get_time_at_elevation(
                 start_dt=today_start_utc,
                 target_elev=self._current_rising_elev,
@@ -262,6 +263,23 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                 direction='setting',
                 max_days=1  # Only look for today's event
             )
+            
+            # If no events today, look for next events within 365 days
+            if not today_rise:
+                today_rise = self._sun_helper.get_time_at_elevation(
+                    start_dt=today_start_utc,
+                    target_elev=self._current_rising_elev,
+                    direction='rising',
+                    max_days=365  # Look up to 365 days ahead
+                )
+            
+            if not today_set:
+                today_set = self._sun_helper.get_time_at_elevation(
+                    start_dt=today_start_utc,
+                    target_elev=self._current_setting_elev,
+                    direction='setting',
+                    max_days=365  # Look up to 365 days ahead
+                )
             
             # === CALCULATE NEXT CHANGE TIME ===
             next_change = None
