@@ -1,0 +1,11 @@
+{
+  "domain": "sol",
+  "name": "Sol",
+  "documentation": "https://github.com/okkine/sol",
+  "requirements": ["ephem"],
+  "dependencies": [],
+  "codeowners": ["@yourusername"],
+  "version": "0.1.0",
+  "iot_class": "calculated",
+  "config_flow": false
+}
