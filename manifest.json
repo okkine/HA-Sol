@@ -1,7 +1,7 @@
 {
   "domain": "sol",
   "name": "Sol",
-  "documentation": "https://github.com/okkine/sol",
+  "documentation": "https://github.com/yourusername/sol-integration",
   "requirements": ["ephem"],
   "dependencies": [],
   "codeowners": ["@yourusername"],

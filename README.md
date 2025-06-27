@@ -1,7 +1,7 @@
 # Sol Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![maintainer](https://img.shields.io/badge/maintainer-%40yourusername-blue.svg)](https://github.com/yourusername)
+[![maintainer](https://img.shields.io/badge/maintainer-%40okkine-blue.svg)](https://github.com/okkine)
 [![Community Forum](https://img.shields.io/badge/community-forum-brightgreen.svg)](https://community.home-assistant.io/)
 
 A comprehensive solar tracking integration for Home Assistant that provides detailed sun position data, elevation tracking, and seasonal solstice calculations.
@@ -27,7 +27,7 @@ A comprehensive solar tracking integration for Home Assistant that provides deta
 
 ### Option 2: Manual Installation
 
-1. Download the `sol` folder from this repository
+1. Download the `custom_components/sol` folder from this repository
 2. Place it in your `config/custom_components/` directory
 3. Restart Home Assistant
 4. Add the integration to your configuration
@@ -197,7 +197,7 @@ This integration is provided as-is for educational and personal use.
 
 ## Support
 
-- [GitHub Issues](https://github.com/yourusername/sol-integration/issues)
+- [GitHub Issues](https://github.com/okkine/sol-integration/issues)
 - [Community Forum](https://community.home-assistant.io/)
 
 ## Credits
