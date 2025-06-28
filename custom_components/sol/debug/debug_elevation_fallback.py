@@ -1,201 +1,167 @@
 #!/usr/bin/env python3
 """
-Debug script to test the improved fallback logic for elevation sensor.
-This script simulates the elevation sensor's fallback behavior when the sun
-doesn't reach the target elevation.
+Debug script to test elevation sensor fallback logic.
+Tests the new logic for handling cases where:
+1. Calculated target elevation exceeds sun's maximum elevation
+2. Calculated target elevation is below sun's minimum elevation (midnight)
 """
 
 import sys
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 import math
 
-# Add the current directory to the path so we can import our modules
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add the parent directory to the path so we can import the helper
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from helper import SunHelper
 
-def test_fallback_logic():
-    """Test the improved fallback logic for different scenarios."""
+def test_elevation_fallback_logic():
+    """Test the elevation fallback logic with various scenarios."""
     
-    # Example coordinates (you can change these)
+    # Test parameters
     latitude = 40.7128  # New York
     longitude = -74.0060
-    elevation = 10.0
+    elevation = 10
     pressure = 1013.25
-    temperature = 15.0
+    temperature = 20
     
+    # Create sun helper
     sun_helper = SunHelper(latitude, longitude, elevation, pressure, temperature)
     
-    print("=== Testing Improved Fallback Logic ===\n")
+    print("=== Testing Elevation Fallback Logic ===\n")
     
-    # Test scenarios around solar midnight
+    # Test times throughout the day
     test_times = [
-        datetime.now(timezone.utc).replace(hour=23, minute=30, second=0, microsecond=0),  # Near midnight
-        datetime.now(timezone.utc).replace(hour=0, minute=30, second=0, microsecond=0),   # After midnight
-        datetime.now(timezone.utc).replace(hour=18, minute=0, second=0, microsecond=0),   # Evening
-        datetime.now(timezone.utc).replace(hour=6, minute=0, second=0, microsecond=0),    # Early morning
+        datetime.now(timezone.utc).replace(hour=6, minute=0, second=0, microsecond=0),  # Early morning
+        datetime.now(timezone.utc).replace(hour=10, minute=0, second=0, microsecond=0), # Mid-morning
+        datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0), # Solar noon
+        datetime.now(timezone.utc).replace(hour=16, minute=0, second=0, microsecond=0), # Late afternoon
+        datetime.now(timezone.utc).replace(hour=20, minute=0, second=0, microsecond=0), # Evening
+        datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0),  # Midnight
     ]
     
-    for test_time in test_times:
-        print(f"Testing at: {test_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    # Test different step sizes
+    step_sizes = [5.0, 10.0, 15.0]
+    
+    for step in step_sizes:
+        print(f"\n--- Testing with step size: {step}° ---")
         
-        # Get current elevation and direction
-        current_elev, current_azimuth = sun_helper.calculate_position(test_time)
-        direction = sun_helper.sun_direction(test_time)
-        
-        print(f"  Current elevation: {current_elev:.2f}°")
-        print(f"  Current azimuth: {current_azimuth:.2f}°")
-        print(f"  Sun direction: {direction}")
-        
-        # Simulate a target that the sun won't reach
-        if direction == "setting":
-            target_elev = current_elev + 5.0  # Higher than current (won't reach)
-        else:
-            target_elev = current_elev - 5.0  # Lower than current (won't reach)
-        
-        print(f"  Target elevation: {target_elev:.2f}° (unreachable)")
-        
-        # Try to find the elevation event
-        event_time = sun_helper.get_time_at_elevation(
-            start_dt=test_time,
-            target_elev=target_elev,
-            direction=direction,  # type: ignore[arg-type]
-            max_days=1
-        )
-        
-        if event_time:
-            print(f"  Elevation event found: {event_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        else:
-            print("  No elevation event found - using fallback logic")
+        for test_time in test_times:
+            print(f"\nTime: {test_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
             
-            # Apply the improved fallback logic
+            # Get current elevation and direction
+            current_elev, current_azimuth = sun_helper.calculate_position(test_time)
+            direction = sun_helper.sun_direction(test_time)
+            
+            print(f"  Current elevation: {current_elev:.2f}°")
+            print(f"  Current azimuth: {current_azimuth:.2f}°")
+            print(f"  Sun direction: {direction}")
+            
+            # Calculate next target elevation (simulating sensor logic)
+            if direction == "rising":
+                next_target = round(current_elev / step) * step + step
+            else:
+                next_target = round(current_elev / step) * step - step
+            
+            # Clamp to physical limits
+            next_target = max(min(next_target, 90), -90)
+            
+            print(f"  Calculated target: {next_target:.2f}°")
+            
+            # Check peak elevation
             try:
-                next_peak = sun_helper.get_peak_elevation_time(test_time)
-                next_midnight = sun_helper.get_next_solar_midnight(test_time)
-                
-                print(f"    Next peak elevation: {next_peak.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-                print(f"    Next solar midnight: {next_midnight.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-                
-                # Smart selection based on current time and direction
-                if next_peak and next_midnight:
-                    current_hour = test_time.hour
+                peak_time = sun_helper.get_peak_elevation_time(test_time)
+                if peak_time:
+                    peak_elev, _ = sun_helper.calculate_position(peak_time)
+                    print(f"  Peak elevation: {peak_elev:.2f}° at {peak_time.strftime('%H:%M:%S')}")
                     
-                    if direction == "setting" and current_hour >= 18:  # Evening/night
-                        fallback_time = next_midnight
-                        reason = "Setting near midnight, using next solar midnight"
-                    elif direction == "rising" and current_hour <= 6:  # Early morning
-                        fallback_time = next_peak
-                        reason = "Rising near dawn, using next peak elevation"
+                    if next_target > peak_elev:
+                        print(f"  *** TARGET EXCEEDS PEAK! Using peak elevation: {peak_elev:.2f}° ***")
+                        print(f"  Next update scheduled for: {peak_time.strftime('%H:%M:%S')}")
                     else:
-                        # Choose the event that's closer in time but still in the right direction
-                        time_to_peak = (next_peak - test_time).total_seconds() if next_peak > test_time else float('inf')
-                        time_to_midnight = (next_midnight - test_time).total_seconds() if next_midnight > test_time else float('inf')
-                        
-                        if time_to_midnight < time_to_peak and direction == "setting":
-                            fallback_time = next_midnight
-                            reason = "Using closer solar midnight"
-                        elif time_to_peak < time_to_midnight and direction == "rising":
-                            fallback_time = next_peak
-                            reason = "Using closer peak elevation"
-                        else:
-                            # Fallback to the earlier event
-                            fallback_time = min(next_peak, next_midnight)
-                            reason = "Using earlier solar event"
-                    
-                    print(f"    Fallback selected: {fallback_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-                    print(f"    Reason: {reason}")
-                    
-                    # Calculate time until fallback
-                    time_until = fallback_time - test_time
-                    print(f"    Time until fallback: {time_until}")
-                    
-                elif next_peak:
-                    print(f"    Using next peak elevation: {next_peak.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-                elif next_midnight:
-                    print(f"    Using next solar midnight: {next_midnight.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-                else:
-                    print("    No solar events found - emergency fallback")
-                    
+                        print(f"  Target is within peak range")
             except Exception as e:
-                print(f"    Error in fallback logic: {e}")
-        
-        print()
+                print(f"  Error checking peak elevation: {e}")
+            
+            # Check midnight elevation
+            try:
+                next_midnight = sun_helper.get_next_solar_midnight(test_time)
+                if next_midnight:
+                    midnight_elev, _ = sun_helper.calculate_position(next_midnight)
+                    print(f"  Midnight elevation: {midnight_elev:.2f}° at {next_midnight.strftime('%H:%M:%S')}")
+                    
+                    if next_target < midnight_elev:
+                        print(f"  *** TARGET BELOW MIDNIGHT! Using midnight elevation: {midnight_elev:.2f}° ***")
+                        print(f"  Next update scheduled for: {next_midnight.strftime('%H:%M:%S')}")
+                    else:
+                        print(f"  Target is above midnight range")
+            except Exception as e:
+                print(f"  Error checking midnight elevation: {e}")
+            
+            print("-" * 50)
 
-def test_specific_midnight_scenario():
-    """Test the specific scenario where the sensor stalls near solar midnight."""
+def test_edge_cases():
+    """Test edge cases and boundary conditions."""
     
-    print("=== Testing Specific Midnight Scenario ===\n")
+    print("\n=== Testing Edge Cases ===\n")
     
-    # Example coordinates
+    # Test parameters
     latitude = 40.7128
     longitude = -74.0060
-    elevation = 10.0
+    elevation = 10
     pressure = 1013.25
-    temperature = 15.0
+    temperature = 20
     
     sun_helper = SunHelper(latitude, longitude, elevation, pressure, temperature)
     
-    # Test time just before solar midnight
-    test_time = datetime.now(timezone.utc).replace(hour=23, minute=45, second=0, microsecond=0)
+    # Test near solar noon
+    noon_time = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+    current_elev, _ = sun_helper.calculate_position(noon_time)
     
-    print(f"Test time: {test_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"Near solar noon (elevation: {current_elev:.2f}°)")
     
-    # Get current elevation and direction
-    current_elev, current_azimuth = sun_helper.calculate_position(test_time)
-    direction = sun_helper.sun_direction(test_time)
+    # Test with very small step size
+    step = 1.0
+    next_target = round(current_elev / step) * step + step
     
-    print(f"Current elevation: {current_elev:.2f}°")
-    print(f"Sun direction: {direction}")
+    try:
+        peak_time = sun_helper.get_peak_elevation_time(noon_time)
+        if peak_time:
+            peak_elev, _ = sun_helper.calculate_position(peak_time)
+            print(f"  Peak elevation: {peak_elev:.2f}°")
+            print(f"  Calculated target: {next_target:.2f}°")
+            
+            if next_target > peak_elev:
+                print(f"  *** Would use peak elevation fallback ***")
+            else:
+                print(f"  Target is within range")
+    except Exception as e:
+        print(f"  Error: {e}")
     
-    # Simulate a step size and calculate target
-    step = 5.0
-    if direction == "setting":
-        next_target = round(current_elev / step) * step - step
-    else:
-        next_target = round(current_elev / step) * step + step
+    # Test near solar midnight
+    midnight_time = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    current_elev, _ = sun_helper.calculate_position(midnight_time)
     
-    print(f"Step size: {step}°")
-    print(f"Target elevation: {next_target:.2f}°")
+    print(f"\nNear solar midnight (elevation: {current_elev:.2f}°)")
     
-    # Try to find the elevation event
-    event_time = sun_helper.get_time_at_elevation(
-        start_dt=test_time,
-        target_elev=next_target,
-        direction=direction,  # type: ignore[arg-type]
-        max_days=1
-    )
+    next_target = round(current_elev / step) * step - step
     
-    if not event_time:
-        print("No elevation event found - testing fallback logic")
-        
-        next_peak = sun_helper.get_peak_elevation_time(test_time)
-        next_midnight = sun_helper.get_next_solar_midnight(test_time)
-        
-        print(f"Next peak: {next_peak.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        print(f"Next midnight: {next_midnight.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        
-        # Old logic (always choose earlier)
-        old_fallback = min(next_peak, next_midnight)
-        print(f"Old logic would choose: {old_fallback.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        
-        # New logic
-        if direction == "setting" and test_time.hour >= 18:
-            new_fallback = next_midnight
-            reason = "Setting near midnight"
-        else:
-            new_fallback = min(next_peak, next_midnight)
-            reason = "Default logic"
-        
-        print(f"New logic chooses: {new_fallback.strftime('%Y-%m-%d %H:%M:%S UTC')} ({reason})")
-        
-        # Show the difference
-        if old_fallback != new_fallback:
-            print(f"IMPROVEMENT: New logic avoids stalling by choosing {new_fallback.strftime('%H:%M:%S')} instead of {old_fallback.strftime('%H:%M:%S')}")
-        else:
-            print("No change in this scenario")
+    try:
+        next_midnight = sun_helper.get_next_solar_midnight(midnight_time)
+        if next_midnight:
+            midnight_elev, _ = sun_helper.calculate_position(next_midnight)
+            print(f"  Midnight elevation: {midnight_elev:.2f}°")
+            print(f"  Calculated target: {next_target:.2f}°")
+            
+            if next_target < midnight_elev:
+                print(f"  *** Would use midnight elevation fallback ***")
+            else:
+                print(f"  Target is within range")
+    except Exception as e:
+        print(f"  Error: {e}")
 
 if __name__ == "__main__":
-    test_fallback_logic()
-    print("\n" + "="*50 + "\n")
-    test_specific_midnight_scenario() 
+    test_elevation_fallback_logic()
+    test_edge_cases()
+    print("\n=== Test Complete ===") 

@@ -133,16 +133,58 @@ class SolElevationSensor(BaseSolSensor):
         else:
             next_target = round(current_elev / self._step) * self._step - self._step
         
-        # Store target elevation in attribute
-        self._target_elevation = round(next_target, 2)
-        
         # Clamp to physical limits
         next_target = max(min(next_target, 90), -90)
         
         _LOGGER.debug(
             "Target calculation: current=%.2f°, step=%.2f°, direction=%s, target=%.2f°", 
-            current_elev, self._step, direction, self._target_elevation
+            current_elev, self._step, direction, next_target
         )
+        
+        # Check if we're approaching solar maximum and target might exceed it
+        try:
+            peak_time = self._sun_helper.get_peak_elevation_time(now)
+            if peak_time:
+                # Calculate what the elevation will be at peak time
+                peak_elev, _ = self._sun_helper.calculate_position(peak_time)
+                
+                # If our target elevation is higher than the peak elevation, 
+                # we should schedule for the peak time instead and update target elevation
+                if next_target > peak_elev:
+                    _LOGGER.debug(
+                        "Target elevation %.2f° exceeds peak elevation %.2f°. "
+                        "Scheduling update for peak time: %s and updating target elevation",
+                        next_target, peak_elev, peak_time
+                    )
+                    # Update target elevation to the actual peak elevation
+                    self._target_elevation = round(peak_elev, 2)
+                    return peak_time
+        except Exception as e:
+            _LOGGER.debug("Error checking peak elevation: %s", e)
+        
+        # Check if we're approaching solar minimum (midnight) and target might be below it
+        try:
+            next_midnight = self._sun_helper.get_next_solar_midnight(now)
+            if next_midnight:
+                # Calculate what the elevation will be at midnight
+                midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
+                
+                # If our target elevation is lower than the midnight elevation, 
+                # we should schedule for midnight and update target elevation
+                if next_target < midnight_elev:
+                    _LOGGER.debug(
+                        "Target elevation %.2f° is below midnight elevation %.2f°. "
+                        "Scheduling update for solar midnight: %s and updating target elevation",
+                        next_target, midnight_elev, next_midnight
+                    )
+                    # Update target elevation to the actual midnight elevation
+                    self._target_elevation = round(midnight_elev, 2)
+                    return next_midnight
+        except Exception as e:
+            _LOGGER.debug("Error checking midnight elevation: %s", e)
+        
+        # Store target elevation in attribute (for normal cases)
+        self._target_elevation = round(next_target, 2)
         
         # Search for event starting from current time
         # Type assertion is safe here since direction is guaranteed to be 'rising' or 'setting'
@@ -175,9 +217,15 @@ class SolElevationSensor(BaseSolSensor):
                     
                     if direction == "setting" and current_hour >= 18:  # Evening/night
                         event_time = next_midnight
+                        # Update target elevation to midnight elevation
+                        midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
+                        self._target_elevation = round(midnight_elev, 2)
                         _LOGGER.debug("Setting near midnight, using next solar midnight: %s", event_time)
                     elif direction == "rising" and current_hour <= 6:  # Early morning
                         event_time = next_peak
+                        # Update target elevation to peak elevation
+                        peak_elev, _ = self._sun_helper.calculate_position(next_peak)
+                        self._target_elevation = round(peak_elev, 2)
                         _LOGGER.debug("Rising near dawn, using next peak elevation: %s", event_time)
                     else:
                         # Choose the event that's closer in time but still in the right direction
@@ -186,20 +234,39 @@ class SolElevationSensor(BaseSolSensor):
                         
                         if time_to_midnight < time_to_peak and direction == "setting":
                             event_time = next_midnight
+                            # Update target elevation to midnight elevation
+                            midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
+                            self._target_elevation = round(midnight_elev, 2)
                             _LOGGER.debug("Using closer solar midnight: %s", event_time)
                         elif time_to_peak < time_to_midnight and direction == "rising":
                             event_time = next_peak
+                            # Update target elevation to peak elevation
+                            peak_elev, _ = self._sun_helper.calculate_position(next_peak)
+                            self._target_elevation = round(peak_elev, 2)
                             _LOGGER.debug("Using closer peak elevation: %s", event_time)
                         else:
                             # Fallback to the earlier event
                             event_time = min(next_peak, next_midnight)
+                            # Update target elevation based on which event we chose
+                            if event_time == next_peak:
+                                peak_elev, _ = self._sun_helper.calculate_position(next_peak)
+                                self._target_elevation = round(peak_elev, 2)
+                            else:
+                                midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
+                                self._target_elevation = round(midnight_elev, 2)
                             _LOGGER.debug("Using earlier solar event: %s (peak: %s, midnight: %s)", 
                                          event_time, next_peak, next_midnight)
                 elif next_peak:
                     event_time = next_peak
+                    # Update target elevation to peak elevation
+                    peak_elev, _ = self._sun_helper.calculate_position(next_peak)
+                    self._target_elevation = round(peak_elev, 2)
                     _LOGGER.debug("Using next peak elevation: %s", event_time)
                 elif next_midnight:
                     event_time = next_midnight
+                    # Update target elevation to midnight elevation
+                    midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
+                    self._target_elevation = round(midnight_elev, 2)
                     _LOGGER.debug("Using next solar midnight: %s", event_time)
                 else:
                     # Emergency fallback
