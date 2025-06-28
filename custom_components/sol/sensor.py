@@ -160,7 +160,56 @@ class SolElevationSensor(BaseSolSensor):
                 "Current elevation: %.2f°. Using solar event fallback.",
                 next_target, direction, current_elev
             )
-            event_time = self._get_solar_event_fallback(now, self._sun_helper)
+            
+            # Try to get next solar events (peak elevation and midnight)
+            try:
+                next_peak = self._sun_helper.get_peak_elevation_time(now)
+                next_midnight = self._sun_helper.get_next_solar_midnight(now)
+                
+                # Smart selection based on current time and direction
+                if next_peak and next_midnight:
+                    # If we're setting and near midnight, prefer midnight
+                    # If we're rising and near noon, prefer noon
+                    # Otherwise, choose the more appropriate event based on current time
+                    current_hour = now.hour
+                    
+                    if direction == "setting" and current_hour >= 18:  # Evening/night
+                        event_time = next_midnight
+                        _LOGGER.debug("Setting near midnight, using next solar midnight: %s", event_time)
+                    elif direction == "rising" and current_hour <= 6:  # Early morning
+                        event_time = next_peak
+                        _LOGGER.debug("Rising near dawn, using next peak elevation: %s", event_time)
+                    else:
+                        # Choose the event that's closer in time but still in the right direction
+                        time_to_peak = (next_peak - now).total_seconds() if next_peak > now else float('inf')
+                        time_to_midnight = (next_midnight - now).total_seconds() if next_midnight > now else float('inf')
+                        
+                        if time_to_midnight < time_to_peak and direction == "setting":
+                            event_time = next_midnight
+                            _LOGGER.debug("Using closer solar midnight: %s", event_time)
+                        elif time_to_peak < time_to_midnight and direction == "rising":
+                            event_time = next_peak
+                            _LOGGER.debug("Using closer peak elevation: %s", event_time)
+                        else:
+                            # Fallback to the earlier event
+                            event_time = min(next_peak, next_midnight)
+                            _LOGGER.debug("Using earlier solar event: %s (peak: %s, midnight: %s)", 
+                                         event_time, next_peak, next_midnight)
+                elif next_peak:
+                    event_time = next_peak
+                    _LOGGER.debug("Using next peak elevation: %s", event_time)
+                elif next_midnight:
+                    event_time = next_midnight
+                    _LOGGER.debug("Using next solar midnight: %s", event_time)
+                else:
+                    # Emergency fallback
+                    event_time = now + timedelta(minutes=5)
+                    _LOGGER.warning("No solar events found, using emergency fallback: %s", event_time)
+                    
+            except Exception as e:
+                _LOGGER.error("Error getting solar events for fallback: %s", e)
+                event_time = now + timedelta(minutes=5)
+                _LOGGER.debug("Using emergency fallback update at %s", event_time)
         
         _LOGGER.debug(
             "Current: %.2f° (azimuth: %.2f°), Direction: %s, Target: %.2f°",

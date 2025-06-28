@@ -77,11 +77,14 @@ class SunHelper:
                 elevation = max(-90, min(90, elevation))
             
             # Azimuth should be 0-360°, but 360° is equivalent to 0°
-            if azimuth < 0 or azimuth > 360:
+            if azimuth < 0:
+                _LOGGER.warning("Calculated azimuth %.2f° is negative, normalizing", azimuth)
+                azimuth = azimuth % 360
+            elif azimuth > 360:
                 _LOGGER.warning("Calculated azimuth %.2f° is outside valid range [0, 360]", azimuth)
                 azimuth = azimuth % 360
             elif azimuth == 360:
-                # Normalize 360° to 0° to avoid confusion
+                # Normalize 360° to 0° to avoid confusion (no warning needed)
                 azimuth = 0.0
             
             return elevation, azimuth
@@ -149,17 +152,24 @@ class SunHelper:
         observer = self._setup_observer(dt_utc)
         
         try:
-            # Get the next transit (solar noon) which is when the sun reaches peak elevation
-            peak_time = observer.next_transit(self._sun)
-            peak_dt = peak_time.datetime().replace(tzinfo=timezone.utc)
+            # Use next_pass() to get the actual maximum altitude time
+            # next_pass() returns (rise_time, rise_az, max_alt_time, max_alt, set_time, set_az)
+            pass_info = observer.next_pass(self._sun)
+            max_alt_time = pass_info[2]  # Maximum altitude time
+            max_alt = pass_info[3]       # Maximum altitude
             
-            # Verify this is actually the peak by checking if it's the next transit after our start time
+            # Convert to datetime
+            peak_dt = max_alt_time.datetime().replace(tzinfo=timezone.utc)
+            
+            # Verify this is actually the peak by checking if it's after our start time
             if peak_dt < dt.astimezone(timezone.utc):
-                # If the next transit is before our start time, get the previous one
-                peak_time = observer.previous_transit(self._sun)
-                peak_dt = peak_time.datetime().replace(tzinfo=timezone.utc)
+                # If the next pass is before our start time, get the previous pass
+                observer.date = ephem.Date(dt_utc - timedelta(days=1))  # Go back one day
+                pass_info = observer.next_pass(self._sun)
+                max_alt_time = pass_info[2]
+                peak_dt = max_alt_time.datetime().replace(tzinfo=timezone.utc)
             
-            _LOGGER.debug("Peak elevation time calculated: %s", peak_dt)
+            _LOGGER.debug("Peak elevation time calculated: %s (max altitude: %.2f°)", peak_dt, math.degrees(max_alt))
             return peak_dt
             
         except Exception as e:
