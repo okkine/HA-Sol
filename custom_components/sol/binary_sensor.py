@@ -390,7 +390,8 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                 "current_setting_elevation": self._current_setting_elev,
                 "seasonally_dynamic": self._seasonally_dynamic,
                 "sun_direction": sun_direction,
-                "next_event_type": next_event_type
+                "next_event_type": next_event_type,
+                "current_elevation_raw": current_elev
             }
             
             # Add solstice curve only for dynamic sensors
