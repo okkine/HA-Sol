@@ -3,5 +3,10 @@
   "render_readme": true,
   "domains": ["sensor", "binary_sensor"],
   "homeassistant": "2023.8.0",
-  "iot_class": "calculated"
+  "iot_class": "calculated",
+  "content_in_root": false,
+  "zip_release": false,
+  "filename": "custom_components/sol/manifest.json",
+  "domain": "sol",
+  "icon": "icon.png"
 } 

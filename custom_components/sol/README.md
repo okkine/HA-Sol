@@ -1,4 +1,6 @@
-# Sol Integration
+# Sol Integration for Home Assistant
+
+> **⚠️ This integration is currently in active development. It is not yet stable and breaking changes may occur. Use at your own risk!**
 
 A comprehensive solar tracking integration for Home Assistant that provides detailed sun position data, elevation tracking, and seasonal solstice calculations.
 

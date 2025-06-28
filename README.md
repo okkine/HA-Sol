@@ -1,4 +1,8 @@
-# Sol Integration for Home Assistant
+# Sol: Home Assistant Solar Tracking Integration
+
+> **⚠️ This integration is currently in active development. It is not yet stable and breaking changes may occur. Use at your own risk!**
+>
+> If you are testing or contributing, please report issues and feedback on GitHub.
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![maintainer](https://img.shields.io/badge/maintainer-%40okkine-blue.svg)](https://github.com/okkine)
