@@ -1,12 +1,6 @@
-# Sol: Home Assistant Solar Tracking Integration
+# Sol Integration for Home Assistant
 
 > **⚠️ This integration is currently in active development. It is not yet stable and breaking changes may occur. Use at your own risk!**
->
-> If you are testing or contributing, please report issues and feedback on GitHub.
-
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![maintainer](https://img.shields.io/badge/maintainer-%40okkine-blue.svg)](https://github.com/okkine)
-[![Community Forum](https://img.shields.io/badge/community-forum-brightgreen.svg)](https://community.home-assistant.io/)
 
 A comprehensive solar tracking integration for Home Assistant that provides detailed sun position data, elevation tracking, and seasonal solstice calculations.
 
@@ -17,24 +11,6 @@ A comprehensive solar tracking integration for Home Assistant that provides deta
 - **Seasonal Dynamic Elevations**: Automatically adjust elevation thresholds based on solstice curves
 - **Solstice Curve Sensor**: Provides normalized solstice transition values (0-1)
 - **Atmospheric Correction**: Accounts for pressure and temperature effects on refraction
-
-## Installation
-
-### Option 1: HACS (Recommended)
-
-1. Make sure you have [HACS](https://hacs.xyz/) installed
-2. Add this repository as a custom repository in HACS
-3. Search for "Sol" in the HACS store
-4. Click "Download"
-5. Restart Home Assistant
-6. Add the integration to your configuration
-
-### Option 2: Manual Installation
-
-1. Download the `custom_components/sol` folder from this repository
-2. Place it in your `config/custom_components/` directory
-3. Restart Home Assistant
-4. Add the integration to your configuration
 
 ## Configuration
 
@@ -102,8 +78,8 @@ sol:
 - **Entity ID**: `binary_sensor.{name}`
 - **State**: `on` when sun is above threshold, `off` when below
 - **Attributes**:
-  - `rising`: Rising elevation threshold
-  - `setting`: Setting elevation threshold
+  - `rising`: Rising elevation threshold time (today's or next)
+  - `setting`: Setting elevation threshold time (today's or next)
   - `next_change`: Time of next state change
   - `current_rising_elevation`: Current dynamic rising elevation
   - `current_setting_elevation`: Current dynamic setting elevation
@@ -160,9 +136,14 @@ The solstice curve provides a normalized value (0-1) representing the transition
 - 0.5 = Spring/fall equinox
 - 1.0 = Summer solstice
 
+### State Behavior
+Binary sensors use direction-dependent state logic:
+- **During rising phase**: ON when sun elevation ≥ rising threshold
+- **During setting phase**: ON when sun elevation ≥ setting threshold
+
 ### Update Frequency
 - Elevation sensors update at each step change
-- Binary sensors update at state changes
+- Binary sensors update at state changes with responsive scheduling
 - Solstice curve updates at local noon and midnight
 
 ## Troubleshooting
@@ -185,26 +166,8 @@ logger:
 ## Requirements
 
 - Home Assistant 2023.8.0 or later
-- Python `ephem` library (automatically installed)
+- Python `ephem` library
 
 ## License
 
-This integration is provided as-is for educational and personal use.
-
-## Contributing
-
-1. Fork this repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-## Support
-
-- [GitHub Issues](https://github.com/okkine/sol-integration/issues)
-- [Community Forum](https://community.home-assistant.io/)
-
-## Credits
-
-- Uses the `ephem` library for accurate astronomical calculations
-- Inspired by the need for precise solar tracking in Home Assistant 
+This integration is provided as-is for educational and personal use. 
