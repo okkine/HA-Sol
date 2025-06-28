@@ -150,34 +150,23 @@ class SunHelper:
             return approx.replace(tzinfo=timezone.utc)
 
     def get_peak_elevation_time(self, dt: datetime) -> datetime:
-        """Get the time when the sun reaches its maximum elevation for the day."""
-        dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        observer = self._setup_observer(dt_utc)
-        
+        """Get the time when the sun reaches its maximum elevation for the day (solar noon)."""
         try:
-            # Use next_pass() to get the actual maximum altitude time
-            # next_pass() returns (rise_time, rise_az, max_alt_time, max_alt, set_time, set_az)
-            pass_info = observer.next_pass(self._sun)
-            max_alt_time = pass_info[2]  # Maximum altitude time
-            max_alt = pass_info[3]       # Maximum altitude
+            # Use solar noon as the peak elevation time
+            # This is more accurate than trying to calculate the exact peak
+            peak_time = self.get_next_solar_noon(dt)
             
-            # Convert to datetime
-            peak_dt = max_alt_time.datetime().replace(tzinfo=timezone.utc)
+            # If the next solar noon is too far in the future, use the previous one
+            if peak_time > dt + timedelta(days=1):
+                peak_time = self.get_previous_solar_noon(dt)
             
-            # Verify this is actually the peak by checking if it's after our start time
-            if peak_dt < dt.astimezone(timezone.utc):
-                # If the next pass is before our start time, get the previous pass
-                observer.date = ephem.Date(dt_utc - timedelta(days=1))  # Go back one day
-                pass_info = observer.next_pass(self._sun)
-                max_alt_time = pass_info[2]
-                peak_dt = max_alt_time.datetime().replace(tzinfo=timezone.utc)
-            
-            _LOGGER.debug("Peak elevation time calculated: %s (max altitude: %.2f°)", peak_dt, math.degrees(max_alt))
-            return peak_dt
+            _LOGGER.debug("Peak elevation time (solar noon): %s", peak_time)
+            return peak_time
             
         except Exception as e:
             _LOGGER.error("Error calculating peak elevation time: %s", e)
             # Fallback to approximate solar noon
+            dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
             approx_noon = dt_utc.replace(hour=12, minute=0, second=0, microsecond=0)
             return approx_noon.replace(tzinfo=timezone.utc)
 
