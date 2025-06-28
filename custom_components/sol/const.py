@@ -6,7 +6,7 @@ NAME = "Sol"
 
 # Test variable to verify new updates are loaded
 # Update this value when making changes to verify the integration is using the latest code
-TEST_VERSION = "2024-01-15-v2-fixed-azimuth-and-elevation-fallback"
+TEST_VERSION = "2024-06-13T21:38Z-azimuth-fix-verified"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
