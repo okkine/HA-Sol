@@ -150,8 +150,8 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             "next_event_type": None
         }
         
-        # Initialize state as None - will be set on first update
-        self._attr_is_on = None
+        # Initialize state as False - will be set to correct value on first update
+        self._attr_is_on = False
         
         _LOGGER.debug("Initialized binary elevation sensor: %s (dynamic: %s)", 
                      user_name, seasonally_dynamic)
@@ -173,9 +173,13 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     _LOGGER.warning("Solstice curve value not available; using local calculation")
                     try:
                         # Calculate solstice curve value at current time
-                        normalized_curve, _, _ = self._solstice_calculator.get_normalized_curve(now)
-                        # Update global store for other sensors
-                        SOLSTICE_CURVE_STORE['value'] = normalized_curve
+                        if self._solstice_calculator is not None:
+                            normalized_curve, _, _ = self._solstice_calculator.get_normalized_curve(now)
+                            # Update global store for other sensors
+                            SOLSTICE_CURVE_STORE['value'] = normalized_curve
+                        else:
+                            _LOGGER.error("Solstice calculator not available for %s", self.name)
+                            normalized_curve = None
                     except Exception as e:
                         _LOGGER.error("Error calculating seasonal elevations for %s: %s", self.name, e)
                         # Use static values as fallback
@@ -211,7 +215,7 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             if current_elev is None:
                 return now + timedelta(minutes=5)
             
-            # === CORRECT STATE DETERMINATION ===
+            # === STATE DETERMINATION ===
             # State depends on sun direction and appropriate threshold:
             # - During RISING phase: ON if above RISING threshold (higher threshold)
             # - During SETTING phase: ON if above SETTING threshold (lower threshold)
@@ -233,11 +237,19 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                 self._current_setting_elev, threshold_used, new_state, self._attr_is_on
             )
             
-            # Check if state changed
-            if self._attr_is_on != new_state:
-                self._attr_is_on = new_state
+            # ALWAYS update the state to reflect current calculated state
+            # This ensures the binary sensor state is always correct
+            state_changed = self._attr_is_on != new_state
+            self._attr_is_on = new_state
+            
+            if state_changed:
                 _LOGGER.info(
                     "State changed for %s: %s (elev=%.2f°, threshold=%.2f°, direction=%s)",
+                    self.name, new_state, current_elev, threshold_used, sun_direction
+                )
+            else:
+                _LOGGER.debug(
+                    "State unchanged for %s: %s (elev=%.2f°, threshold=%.2f°, direction=%s)",
                     self.name, new_state, current_elev, threshold_used, sun_direction
                 )
             
