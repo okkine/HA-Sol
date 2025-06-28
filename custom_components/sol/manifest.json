@@ -7,6 +7,5 @@
   "codeowners": ["@okkine"],
   "version": "1.0.0",
   "iot_class": "calculated",
-  "config_flow": false,
-  "icon": "icon.png"
+  "config_flow": false
 }

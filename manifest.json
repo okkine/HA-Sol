@@ -7,6 +7,5 @@
   "codeowners": ["@yourusername"],
   "version": "0.1.0",
   "iot_class": "calculated",
-  "config_flow": false,
-  "icon": "icon.png"
+  "config_flow": false
 }
