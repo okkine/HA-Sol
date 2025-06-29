@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 15:32 - Added debug logging to trace elevation sensor update issues"
+TEST_VERSION = "2025-06-29 15:42 - Reduced debug logging frequency to reduce log spam"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
