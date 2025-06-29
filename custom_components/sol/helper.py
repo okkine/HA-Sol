@@ -459,41 +459,62 @@ class SunHelper:
             
             # Use ephem's built-in rise/set calculations
             try:
-                if direction == 'rising':
-                    # Get next rising time
-                    next_rise = observer.next_rising(self._sun)
-                    if next_rise is not None:
-                        # Convert ephem date to datetime
-                        rise_dt = next_rise.datetime().replace(tzinfo=timezone.utc)
-                        
-                        _LOGGER.debug(
-                            "%s: Ephem rising calculation - target_elev=%.2f°, start_dt_utc=%s, next_rise=%s, rise_dt=%s",
-                            caller, target_elev, start_dt_utc, next_rise, rise_dt
-                        )
-                        
-                        # Check if it's within our search window
-                        end_dt = start_dt_utc + timedelta(days=max_days if max_days > 0 else 1)
-                        if rise_dt <= end_dt:
-                            return rise_dt
-                else:  # setting
-                    # Get next setting time
-                    next_set = observer.next_setting(self._sun)
-                    if next_set is not None:
-                        # Convert ephem date to datetime
-                        set_dt = next_set.datetime().replace(tzinfo=timezone.utc)
-                        
-                        _LOGGER.debug(
-                            "%s: Ephem setting calculation - target_elev=%.2f°, start_dt_utc=%s, next_set=%s, set_dt=%s",
-                            caller, target_elev, start_dt_utc, next_set, set_dt
-                        )
-                        
-                        # Check if it's within our search window
-                        end_dt = start_dt_utc + timedelta(days=max_days if max_days > 0 else 1)
-                        if set_dt <= end_dt:
-                            return set_dt
+                # Search through multiple days if max_days > 0
+                search_days = max_days  # Use max_days directly, no else clause
+                current_search_date = utc_date
+                day_offset = 0
+                
+                while day_offset <= search_days:
+                    # Set observer date for this search day
+                    search_date = current_search_date + timedelta(days=day_offset)
+                    observer.date = ephem.Date(search_date)
+                    
+                    _LOGGER.debug(
+                        "%s: Searching day %d - search_date=%s, observer_date=%s",
+                        caller, day_offset, search_date, observer.date
+                    )
+                    
+                    if direction == 'rising':
+                        # Get next rising time for this day
+                        next_rise = observer.next_rising(self._sun)
+                        if next_rise is not None:
+                            # Convert ephem date to datetime
+                            rise_dt = next_rise.datetime().replace(tzinfo=timezone.utc)
                             
+                            _LOGGER.debug(
+                                "%s: Ephem rising calculation - target_elev=%.2f°, search_date=%s, next_rise=%s, rise_dt=%s",
+                                caller, target_elev, search_date, next_rise, rise_dt
+                            )
+                            
+                            # Check if it's within our search window
+                            end_dt = start_dt_utc + timedelta(days=search_days)
+                            if rise_dt <= end_dt:
+                                return rise_dt
+                    else:  # setting
+                        # Get next setting time for this day
+                        next_set = observer.next_setting(self._sun)
+                        if next_set is not None:
+                            # Convert ephem date to datetime
+                            set_dt = next_set.datetime().replace(tzinfo=timezone.utc)
+                            
+                            _LOGGER.debug(
+                                "%s: Ephem setting calculation - target_elev=%.2f°, search_date=%s, next_set=%s, set_dt=%s",
+                                caller, target_elev, search_date, next_set, set_dt
+                            )
+                            
+                            # Check if it's within our search window
+                            end_dt = start_dt_utc + timedelta(days=search_days)
+                            if set_dt <= end_dt:
+                                return set_dt
+                    
+                    # Move to next day
+                    day_offset += 1
             except (ephem.AlwaysUpError, ephem.NeverUpError):
                 # Sun never reaches this elevation at this location
+                _LOGGER.warning(
+                    "%s: Sun never reaches elevation %.2f° at this location (AlwaysUpError/NeverUpError)",
+                    caller, target_elev
+                )
                 return None
             
             return None
