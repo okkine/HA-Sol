@@ -2,14 +2,14 @@
 import math
 import ephem
 from datetime import datetime, timezone, timedelta, time
-from typing import Optional, Literal
+from typing import Optional, Literal, Tuple, Union, cast
 import logging
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import slugify
 import homeassistant.util.dt as dt_util
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from .const import DOMAIN, NAME
+from .const import DOMAIN, NAME, TEST_VERSION
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,24 +37,31 @@ class SunHelper:
         self._sun = ephem.Sun()
 
     def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:
-        """Create and configure an ephem observer with current settings.
+        """Set up ephem observer with current location and time.
         
         Args:
-            date_time: Optional timezone-aware datetime to set observer's date
+            date_time: Optional timezone-aware datetime. If None, current UTC time will be used.
+            
+        Returns:
+            Configured ephem.Observer object
+            
+        Raises:
+            ValueError: If the datetime is not timezone-aware
         """
+        # Ensure we have a timezone-aware datetime
+        if date_time is None:
+            date_time = datetime.now(timezone.utc)
+        elif date_time.tzinfo is None:
+            raise ValueError("date_time must be timezone-aware")
+            
         observer = ephem.Observer()
         observer.lat = str(self.latitude)
         observer.lon = str(self.longitude)
         observer.elevation = self.elevation
         observer.pressure = self.pressure
         observer.temp = self.temperature
+        observer.date = date_time.astimezone(timezone.utc).replace(tzinfo=None)
         
-        if date_time is not None:
-            if date_time.tzinfo is None:
-                raise ValueError("date_time must be timezone-aware")
-            # ephem.Date can handle timezone-aware datetimes directly
-            observer.date = ephem.Date(date_time)
-            
         return observer
 
     # === POSITION CALCULATION ===
@@ -110,32 +117,51 @@ class SunHelper:
             return -90.0, 0.0
 
     # === SOLAR EVENT CALCULATIONS ===
-    def get_previous_solar_noon(self, dt: datetime) -> datetime:
-        """Get the previous solar noon before the given datetime."""
-        return self._get_solar_transit(dt, "previous")
+    def get_peak_elevation_time(self, start_dt: datetime) -> Optional[datetime]:
+        """Get the time of peak elevation (solar noon) after the given datetime."""
+        try:
+            return self.get_next_solar_noon(start_dt)
+        except Exception as e:
+            _LOGGER.error("Error getting peak elevation time: %s", e)
+            return None
 
-    def get_next_solar_noon(self, dt: datetime) -> datetime:
+    def get_next_solar_noon(self, start_dt: datetime) -> Optional[datetime]:
         """Get the next solar noon after the given datetime."""
-        return self._get_solar_transit(dt, "next")
+        try:
+            return self._get_solar_event(start_dt, "next", "transit")
+        except Exception as e:
+            _LOGGER.error("Error getting next solar noon: %s", e)
+            return None
 
-    def get_previous_solar_midnight(self, dt: datetime) -> datetime:
-        """Get the previous solar midnight before the given datetime."""
-        return self._get_solar_antitransit(dt, "previous")
-
-    def get_next_solar_midnight(self, dt: datetime) -> datetime:
+    def get_next_solar_midnight(self, start_dt: datetime) -> Optional[datetime]:
         """Get the next solar midnight after the given datetime."""
-        return self._get_solar_antitransit(dt, "next")
+        try:
+            return self._get_solar_event(start_dt, "next", "antitransit")
+        except Exception as e:
+            _LOGGER.error("Error getting next solar midnight: %s", e)
+            return None
 
-    def _get_solar_transit(self, dt: datetime, direction: str) -> datetime:
-        """Get solar transit (noon) time."""
-        return self._get_solar_event(dt, direction, "transit")
+    def get_previous_solar_noon(self, start_dt: datetime) -> Optional[datetime]:
+        """Get the previous solar noon before the given datetime."""
+        try:
+            return self._get_solar_event(start_dt, "previous", "transit")
+        except Exception as e:
+            _LOGGER.error("Error getting previous solar noon: %s", e)
+            return None
 
-    def _get_solar_antitransit(self, dt: datetime, direction: str) -> datetime:
-        """Get solar anti-transit (midnight) time."""
-        return self._get_solar_event(dt, direction, "antitransit")
+    def get_previous_solar_midnight(self, start_dt: datetime) -> Optional[datetime]:
+        """Get the previous solar midnight before the given datetime."""
+        try:
+            return self._get_solar_event(start_dt, "previous", "antitransit")
+        except Exception as e:
+            _LOGGER.error("Error getting previous solar midnight: %s", e)
+            return None
 
-    def _get_solar_event(self, dt: datetime, direction: str, event_type: str) -> datetime:
+    def _get_solar_event(self, dt: datetime, direction: str, event_type: str) -> Optional[datetime]:
         """Get solar event time using ephem."""
+        if dt.tzinfo is None:
+            raise ValueError("date_time must be timezone-aware")
+            
         dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
         observer = self._setup_observer(dt_utc)
         
@@ -266,11 +292,11 @@ class SunHelper:
         )
         return None
 
-    def sun_direction(self, cur_dttm: datetime) -> str:
+    def sun_direction(self, cur_dttm: Optional[datetime] = None) -> str:
         """Determine if the sun is rising at the given datetime.
         
         Args:
-            cur_dttm: A timezone-aware datetime object
+            cur_dttm: A timezone-aware datetime object, or None to use current UTC time
             
         Returns:
             'rising' or 'setting'
@@ -298,19 +324,25 @@ class SunHelper:
                 
                 if event_type == "solar_noon":
                     event = self.get_next_solar_noon(start)
-                    if event >= end:
+                    if event and event >= end:
                         event = self.get_previous_solar_noon(start)
                     return event
                 elif event_type == "solar_midnight":
                     event = self.get_next_solar_midnight(start)
-                    if event >= end:
+                    if event and event >= end:
                         event = self.get_previous_solar_midnight(start)
                     return event
+                return None
                 
             # Get solar events
             hi_dttm = get_solar_event(cur_date, "solar_noon")
             lo_dttm = get_solar_event(cur_date, "solar_midnight")
             nxt_noon = get_solar_event(cur_date + ONE_DAY, "solar_noon")
+    
+            # If we can't get solar events, use elevation trend
+            if not hi_dttm or not lo_dttm or not nxt_noon:
+                _LOGGER.debug("Missing solar events, using elevation trend")
+                return self._get_direction_from_elevation_trend(cur_dttm)
     
             # Determine bracketing events
             if cur_dttm < lo_dttm:
@@ -321,6 +353,10 @@ class SunHelper:
                 tr_dttm = hi_dttm
             else:
                 lo_dttm_next = get_solar_event(cur_date + ONE_DAY, "solar_midnight")
+                if not lo_dttm_next:
+                    _LOGGER.debug("Missing next solar midnight, using elevation trend")
+                    return self._get_direction_from_elevation_trend(cur_dttm)
+                    
                 if cur_dttm < lo_dttm_next:
                     tl_dttm = hi_dttm
                     tr_dttm = lo_dttm_next
@@ -328,14 +364,14 @@ class SunHelper:
                     tl_dttm = lo_dttm_next
                     tr_dttm = nxt_noon
     
-            # Get elevations at bracketing points
-            tl_elev = self.calculate_position(tl_dttm)[0]  # elevation is first value
-            tr_elev = self.calculate_position(tr_dttm)[0]
-            
             # If we couldn't get bracketing events, use elevation trend
             if not tl_dttm or not tr_dttm:
                 _LOGGER.debug("No bracketing events found, using elevation trend")
                 return self._get_direction_from_elevation_trend(cur_dttm)
+            
+            # Get elevations at bracketing points
+            tl_elev = self.calculate_position(tl_dttm)[0]  # elevation is first value
+            tr_elev = self.calculate_position(tr_dttm)[0]
             
             # Final validation before return
             if tr_elev > tl_elev:
@@ -354,11 +390,20 @@ class SunHelper:
             _LOGGER.warning("Error in sun_direction: %s. Using elevation trend.", e)
             return self._get_direction_from_elevation_trend(cur_dttm)
 
-    def _get_direction_from_elevation_trend(self, cur_dttm: datetime) -> str:
+    def _get_direction_from_elevation_trend(self, cur_dttm: Optional[datetime] = None) -> str:
         """Determine sun direction by comparing current elevation with future elevation.
         
-        This is a simpler but less accurate method used as a fallback.
+        Args:
+            cur_dttm: A timezone-aware datetime object, or None to use current UTC time
+            
+        Returns:
+            'rising' or 'setting'
         """
+        if cur_dttm is None:
+            cur_dttm = datetime.now(timezone.utc)
+        elif cur_dttm.tzinfo is None:
+            raise ValueError("date_time must be timezone-aware")
+            
         future = cur_dttm + timedelta(minutes=15)
         future_elev = self.calculate_position(future)[0]
         current_elev = self.calculate_position(cur_dttm)[0]
@@ -367,143 +412,99 @@ class SunHelper:
                      direction, current_elev, future_elev)
         return direction
 
-    def _get_sun_direction_with_fallback(self, now, sun_helper):
+    def _get_sun_direction_with_fallback(self, now: Optional[datetime]) -> Optional[str]:
         """Get sun direction. Fallback is now handled within sun_direction."""
-        direction = sun_helper.sun_direction(now)
-        _LOGGER.debug("Sun direction determined: %s", direction)
-        return direction
+        try:
+            if now is None:
+                now = datetime.now(timezone.utc)
+            elif now.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
+                
+            direction = self.sun_direction(now)
+            _LOGGER.debug("Sun direction determined: %s", direction)
+            return direction
+        except Exception as e:
+            _LOGGER.error("Error getting sun direction: %s", e)
+            return None
 
 class BaseSolEntity:
-    """Base class for Sol entities handling common scheduling and update logic."""
-    
-    def __init__(self, base_name, unique_suffix, name=None):
-        """
-        Initialize base entity with consistent naming conventions.
-        
-        Args:
-            base_name: The descriptive part of the name
-            unique_suffix: The unique identifier suffix
-            name: The prefix for entity names (defaults to NAME from const.py)
-        """
-        if name is None:
-            name = NAME
-            
-        formatted_name = f"{name} - {base_name}"
-        self._attr_name = ' '.join(word.capitalize() for word in formatted_name.split())
-        self._attr_unique_id = f"{DOMAIN}_{slugify(unique_suffix)}"
-        self._unsub_update = None
-        self._attr_available = False  # Start as unavailable until first update
-        self._next_update = None
+    """Base class for Sol entities."""
+
+    def __init__(self, name_suffix: str, unique_id_suffix: str) -> None:
+        """Initialize the base entity."""
+        self._name_suffix = name_suffix
+        self._unique_id_suffix = unique_id_suffix
+        self._attr_should_poll = False
+        self._attr_has_entity_name = True
+        self._attr_name = None  # Use device name
+        self._attr_unique_id = None  # Set by platform
+        self.next_change = None
 
     @property
-    def next_change(self):
-        """Return the next scheduled update time."""
-        return self._next_update
+    def device_info(self):
+        """Return device info."""
+        return {
+            "identifiers": {("sol", "sun_helper")},
+            "name": "Sol Sun Helper",
+            "manufacturer": "Sol Integration",
+            "model": "Sun Helper",
+            "sw_version": TEST_VERSION,
+        }
 
-    @property
-    def should_poll(self):
-        """Disable polling for this entity."""
-        return False
-
-    async def async_will_remove_from_hass(self):
-        """Cancel next update when entity is removed."""
-        self.cancel_scheduled_update()
-
-    def cancel_scheduled_update(self):
-        """Cancel any scheduled updates."""
-        if self._unsub_update:
-            self._unsub_update()
-            self._unsub_update = None
-
-    async def async_added_to_hass(self):
-        """Call when entity is added to hass."""
-        await super().async_added_to_hass()
-        # Schedule immediate update when added to Home Assistant
-        self.hass.async_create_task(self.async_update())
-
-    async def async_update(self, now=None):
-        """Common update logic and scheduling."""
-        try:
-            # Call sensor-specific update logic
-            next_update_time = await self._async_update_logic(now)
-            self._next_update = next_update_time
-            
-            # Handle scheduling
-            if next_update_time:
-                # Ensure we don't schedule in the past
-                if next_update_time <= dt_util.utcnow():
-                    next_update_time = dt_util.utcnow() + timedelta(seconds=5)
-                    _LOGGER.warning("Rescheduling %s to %s", self.name, next_update_time)
-                
-                # Cancel existing update before scheduling new one
-                self.cancel_scheduled_update()
-                
-                # Schedule next update
-                self._unsub_update = async_track_point_in_time(
-                    self.hass, self.async_update, next_update_time
-                )
-                _LOGGER.debug("Scheduled next update for %s at %s", self.name, next_update_time)
-            else:
-                # No update time returned - cancel any existing updates
-                self.cancel_scheduled_update()
-                _LOGGER.warning("No update time returned for %s", self.name)
-            
-            # Set entity as available after successful update
-            self._attr_available = True
-            
-            # Write state to Home Assistant
-            if self.entity_id:
-                self.async_write_ha_state()
-                
-        except Exception as e:
-            _LOGGER.error("Error updating %s: %s", self.name, e, exc_info=True)
-            
-            # Set entity as unavailable on error
-            self._attr_available = False
-            
-            # Schedule retry in 5 minutes
-            next_update_time = dt_util.utcnow() + timedelta(minutes=5)
-            
-            # Cancel existing update and schedule retry
-            self.cancel_scheduled_update()
-            self._unsub_update = async_track_point_in_time(
-                self.hass, self.async_update, next_update_time
-            )
-            
-            # Write state to Home Assistant
-            if self.entity_id:
-                self.async_write_ha_state()
-
-    async def _async_update_logic(self, now):
-        """Sensor-specific update logic to be implemented by subclasses.
-        
-        Should return the next update time or None if no scheduling needed.
-        """
-        raise NotImplementedError("Subclasses must implement this method")
-
-    def _get_current_elevation(self, now, sun_helper):
+    def _get_current_elevation(self, now: Optional[datetime], sun_helper: 'SunHelper') -> Tuple[Optional[float], Optional[float]]:
         """Get current elevation with error handling."""
         try:
-            current_elev, azimuth = sun_helper.calculate_position(now)
-            return current_elev, azimuth
+            if now is None:
+                now = datetime.now(timezone.utc)
+            elevation, azimuth = sun_helper.calculate_position(now)
+            return elevation, azimuth
         except Exception as e:
-            _LOGGER.error("Error getting sun position: %s", e)
+            _LOGGER.error("Error calculating elevation: %s", e)
             return None, None
 
-    def _get_solar_event_fallback(self, now, sun_helper):
-        """Get solar event fallback when elevation events are not found."""
+    def _get_sun_direction_with_fallback(self, now: Optional[datetime], sun_helper: 'SunHelper') -> Optional[str]:
+        """Get sun direction. Fallback is now handled within sun_direction."""
+        try:
+            if now is None:
+                now = datetime.now(timezone.utc)
+            elif now.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
+                
+            direction = sun_helper.sun_direction(now)
+            _LOGGER.debug("Sun direction determined: %s", direction)
+            return direction
+        except Exception as e:
+            _LOGGER.error("Error getting sun direction: %s", e)
+            return None
+
+    def _get_solar_event_fallback(self, now: Optional[datetime], sun_helper: 'SunHelper') -> datetime:
+        """Get solar event fallback when elevation events are not found.
+        
+        Args:
+            now: A timezone-aware datetime object, or None to use current UTC time
+            sun_helper: The SunHelper instance to use for calculations
+            
+        Returns:
+            The next solar event time, or current time + 5 minutes as fallback
+        """
+        # Ensure we have a valid datetime
+        if now is None:
+            now = datetime.now(timezone.utc)
+        elif now.tzinfo is None:
+            raise ValueError("date_time must be timezone-aware")
+            
         try:
             next_peak = sun_helper.get_peak_elevation_time(now)
             next_midnight = sun_helper.get_next_solar_midnight(now)
             
-            if next_peak and next_midnight:
+            if next_peak is not None and next_midnight is not None:
                 event_time = min(next_peak, next_midnight)
                 _LOGGER.debug("Using earlier solar event: %s (peak: %s, midnight: %s)", 
                              event_time, next_peak, next_midnight)
-            elif next_peak:
+            elif next_peak is not None:
                 event_time = next_peak
                 _LOGGER.debug("Using next peak elevation: %s", event_time)
-            elif next_midnight:
+            elif next_midnight is not None:
                 event_time = next_midnight
                 _LOGGER.debug("Using next solar midnight: %s", event_time)
             else:
@@ -516,6 +517,10 @@ class BaseSolEntity:
         except Exception as e:
             _LOGGER.error("Error getting solar events for fallback: %s", e)
             return now + timedelta(minutes=5)
+
+    async def async_update(self):
+        """Update the entity."""
+        raise NotImplementedError("Subclasses must implement this method")
 
 class BaseSolSensor(BaseSolEntity, SensorEntity):
     """Base class for Sol sensor entities."""
