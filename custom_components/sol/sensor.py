@@ -382,7 +382,7 @@ class SolSolsticeCurveSensor(BaseSolSensor):
                 "todays_sunrise": todays_sunrise.isoformat() if todays_sunrise else None,
                 "todays_sunset": todays_sunset.isoformat() if todays_sunset else None,
                 "update_time_local": now_local.isoformat(),
-                "update_time_utc": dt_util.as_utc(now).strftime("%Y-%m-%d %H:%M:%S UTC")
+                "update_time_utc": f"UTC: {dt_util.as_utc(now).strftime('%Y-%m-%d %H:%M:%S')}"
             }
             
             _LOGGER.debug(
