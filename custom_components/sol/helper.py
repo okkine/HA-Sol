@@ -37,7 +37,11 @@ class SunHelper:
         self._sun = ephem.Sun()
 
     def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:
-        """Create and configure an ephem observer with current settings."""
+        """Create and configure an ephem observer with current settings.
+        
+        Args:
+            date_time: Optional timezone-aware datetime to set observer's date
+        """
         observer = ephem.Observer()
         observer.lat = str(self.latitude)
         observer.lon = str(self.longitude)
@@ -46,8 +50,10 @@ class SunHelper:
         observer.temp = self.temperature
         
         if date_time is not None:
-            utc_time = date_time.astimezone(timezone.utc).replace(tzinfo=None)
-            observer.date = ephem.Date(utc_time)
+            if date_time.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
+            # ephem.Date can handle timezone-aware datetimes directly
+            observer.date = ephem.Date(date_time)
             
         return observer
 
@@ -172,6 +178,15 @@ class SunHelper:
         max_days: int = 0,
         use_center: bool = True
     ) -> Optional[datetime]:
+        """Find the next time the sun reaches target elevation in the given direction.
+        
+        Args:
+            start_dt: The datetime to start searching from
+            target_elev: The target elevation in degrees
+            direction: Whether to look for 'rising' or 'setting' crossing of target
+            max_days: Maximum days to search forward (0 for current day only)
+            use_center: Whether to use sun's center (True) or upper limb (False)
+        """
         if target_elev is None:
             _LOGGER.error("Target elevation cannot be None for direction '%s'", direction)
             return None
@@ -179,74 +194,63 @@ class SunHelper:
         if direction not in ('rising', 'setting'):
             raise ValueError("Direction must be 'rising' or 'setting'")
         
+        # Convert to UTC for calculations
         start_dt_utc = start_dt.astimezone(timezone.utc)
-        naive_start_dt_utc = start_dt_utc.replace(tzinfo=None)
+        current_date = start_dt_utc
         
-        observer = self._setup_observer(naive_start_dt_utc)
-        
+        # Determine end time based on max_days
         if max_days > 0:
-            end_date = naive_start_dt_utc + timedelta(days=max_days)
+            end_date = start_dt_utc + timedelta(days=max_days)
         else:
-            end_date = naive_start_dt_utc + timedelta(days=365)
+            # If max_days is 0, search until end of the current day in local time
+            local_date = start_dt_utc.astimezone(start_dt.tzinfo).date()
+            end_local = datetime.combine(local_date, time(23, 59, 59, 999999))
+            end_date = end_local.astimezone(timezone.utc)
         
-        current_date = naive_start_dt_utc
-        sun = self._sun
-        always_up_count = 0
-        never_up_count = 0
+        _LOGGER.debug(
+            "Searching for elevation %.2f° %s between %s and %s",
+            target_elev, direction, current_date, end_date
+        )
+        
+        # Track the last elevation to detect crossings
+        last_elev = None
         
         while current_date <= end_date:
             try:
-                observer.date = ephem.Date(current_date)
+                # Calculate current elevation
+                current_elev, _ = self.calculate_position(current_date)
                 
-                if direction == 'rising':
-                    observer.horizon = math.radians(target_elev) 
-                    event_time = observer.next_rising(sun, use_center=use_center)
-                else:
-                    observer.horizon = math.radians(target_elev) 
-                    event_time = observer.next_setting(sun, use_center=use_center)
+                if last_elev is not None:
+                    # Check if we've crossed the target elevation
+                    if direction == 'rising' and last_elev <= target_elev < current_elev:
+                        # Found rising crossing
+                        _LOGGER.debug(
+                            "Found rising crossing at %s (%.2f° -> %.2f°)",
+                            current_date, last_elev, current_elev
+                        )
+                        return current_date
+                    elif direction == 'setting' and last_elev >= target_elev > current_elev:
+                        # Found setting crossing
+                        _LOGGER.debug(
+                            "Found setting crossing at %s (%.2f° -> %.2f°)",
+                            current_date, last_elev, current_elev
+                        )
+                        return current_date
                 
-                event_dt = event_time.datetime().replace(tzinfo=timezone.utc)
+                last_elev = current_elev
+                current_date += self.search_increment
                 
-                if event_dt >= start_dt_utc:
-                    _LOGGER.debug(
-                        "Found %s event at elevation %.2f°: %s", 
-                        direction, target_elev, event_dt
-                    )
-                    return event_dt
-                    
-            except ephem.AlwaysUpError:
-                always_up_count += 1
-                if always_up_count == 1:  # Log only first occurrence
-                    _LOGGER.debug(
-                        "Sun always above %.2f° at %s (AlwaysUpError)", 
-                        target_elev, current_date
-                    )
-            except ephem.NeverUpError:
-                never_up_count += 1
-                if never_up_count == 1:  # Log only first occurrence
-                    _LOGGER.debug(
-                        "Sun never reaches %.2f° at %s (NeverUpError)", 
-                        target_elev, current_date
-                    )
             except Exception as e:
-                _LOGGER.error("Error calculating %s event at elevation %.2f°: %s", 
-                             direction, target_elev, e)
-            
-            current_date += self.search_increment
+                _LOGGER.error(
+                    "Error calculating elevation at %s: %s",
+                    current_date, e
+                )
+                current_date += self.search_increment
         
-        # Log summary if no event found
-        if always_up_count > 0 or never_up_count > 0:
-            _LOGGER.debug(
-                "No %s event found for elevation %.2f° after %d days. "
-                "AlwaysUp: %d times, NeverUp: %d times", 
-                direction, target_elev, max_days or 365, always_up_count, never_up_count
-            )
-        else:
-            _LOGGER.debug(
-                "No %s event found for elevation %.2f° after %d days", 
-                direction, target_elev, max_days or 365
-            )
-        
+        _LOGGER.debug(
+            "No %s crossing of %.2f° found between %s and %s",
+            direction, target_elev, start_dt_utc, end_date
+        )
         return None
 
     def sun_direction(self, cur_dttm: datetime) -> str:
@@ -539,16 +543,20 @@ class SolCalculateSolsticeCurve:
     def get_normalized_curve(self, date_time: datetime = None) -> tuple[float, datetime, datetime]:
         """Calculate normalized solstice curve (0-1) and adjacent solstices.
         
+        Args:
+            date_time: The datetime to calculate for (must be timezone-aware)
+                      If None, current UTC time will be used.
+        
         Returns:
             Tuple (normalized_value, previous_solstice, next_solstice)
         """
         # Use current UTC time if not specified
         if date_time is None:
             date_time = datetime.now(timezone.utc)
-        else:
-            date_time = date_time.astimezone(timezone.utc)
+        elif date_time.tzinfo is None:
+            raise ValueError("date_time must be timezone-aware")
         
-        # Create observer
+        # Create observer - no need to convert to UTC again since ephem.Date handles timezone-aware datetimes
         observer = self._setup_observer(date_time)
         
         # Find solstices

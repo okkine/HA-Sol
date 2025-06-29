@@ -44,18 +44,18 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
         
         # Get current time and convert to local
-        now = dt_util.utcnow()
+        now = dt_util.utcnow()  # Already in UTC
         now_local = dt_util.as_local(now)
         
-        # Start from beginning of today to find today's events
-        start_of_day = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_day_utc = start_of_day.astimezone(dt_util.UTC)
+        # Start from beginning of today in local time, then convert to UTC once
+        start_of_day_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_day = start_of_day_local.astimezone(dt_util.UTC)
         
         # Determine calculation time based on whether it's before or after noon
         if now_local.hour < 12:
             # Before noon: use today's sunrise (0 degrees rising)
             calculation_time = sun_helper.get_time_at_elevation(
-                start_dt=start_of_day_utc,
+                start_dt=start_of_day,  # Already in UTC
                 target_elev=0,
                 direction='rising',
                 max_days=0
@@ -64,7 +64,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         else:
             # After noon: use today's sunset (0 degrees setting)
             calculation_time = sun_helper.get_time_at_elevation(
-                start_dt=start_of_day_utc,
+                start_dt=start_of_day,  # Already in UTC
                 target_elev=0,
                 direction='setting',
                 max_days=0
@@ -73,11 +73,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         
         # Fallback to current time if no events found
         if not calculation_time:
-            calculation_time = now
+            calculation_time = now  # Already in UTC
             event_type_used = "current_time"
         
         # Calculate solstice curve at the determined calculation time
-        normalized, prev_solstice, next_solstice = calculator.get_normalized_curve(date_time=calculation_time)
+        normalized, prev_solstice, next_solstice = calculator.get_normalized_curve(date_time=calculation_time)  # calculation_time is already UTC
         
         # Update global storage
         SOLSTICE_CURVE_STORE['value'] = normalized
