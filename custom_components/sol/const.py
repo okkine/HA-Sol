@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 13:15-0600-add-solar-attributes"
+TEST_VERSION = "2025-06-29 13:21-0600-fix-utc-time-display"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
