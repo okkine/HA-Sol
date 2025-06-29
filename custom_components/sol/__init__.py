@@ -59,7 +59,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     start_dt=start_of_day_utc,
                     target_elev=0,
                     direction='rising',
-                    max_days=1
+                    max_days=0
                 )
                 event_type_used = "today's sunrise"
             else:
@@ -68,7 +68,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     start_dt=start_of_day_utc,
                     target_elev=0,
                     direction='setting',
-                    max_days=1
+                    max_days=0
                 )
                 event_type_used = "today's sunset"
             
