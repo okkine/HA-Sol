@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29T16:00-0600-fix-base-entity"
+TEST_VERSION = "2025-06-29 13:05-0600-fix-update-scheduling"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"

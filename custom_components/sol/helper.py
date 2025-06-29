@@ -596,16 +596,6 @@ class BaseSolEntity:
             # Get next solar events
             self._next_change = self._get_solar_event_fallback(now, sun_helper)
             
-            # Call subclass update logic if available
-            if hasattr(self, '_async_update_logic'):
-                next_update = await getattr(self, '_async_update_logic')(now)
-                if next_update is not None:
-                    async_track_point_in_time(
-                        self.hass, 
-                        lambda x: self.async_update(),
-                        next_update
-                    )
-            
         except Exception as e:
             _LOGGER.error("Error updating entity %s: %s", self._attr_name, str(e))
             raise
@@ -615,13 +605,17 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
     
     async def async_update(self) -> None:
         """Update the sensor."""
+        # Call parent update first
+        await super().async_update()
+        
+        # Then call child update logic and schedule next update
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
             next_update = await getattr(self, '_async_update_logic')(now)
             if next_update is not None:
                 async_track_point_in_time(
                     self.hass, 
-                    lambda x: self.async_update(),
+                    lambda _: self.async_update(),
                     next_update
                 )
 
@@ -630,13 +624,17 @@ class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
     
     async def async_update(self) -> None:
         """Update the binary sensor."""
+        # Call parent update first
+        await super().async_update()
+        
+        # Then call child update logic and schedule next update
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
             next_update = await getattr(self, '_async_update_logic')(now)
             if next_update is not None:
                 async_track_point_in_time(
                     self.hass, 
-                    lambda x: self.async_update(),
+                    lambda _: self.async_update(),
                     next_update
                 )
 
