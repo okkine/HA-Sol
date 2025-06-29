@@ -394,28 +394,28 @@ class SolSolsticeCurveSensor(BaseSolSensor):
                 start_dt=start_dt,
                 target_elev=0,
                 direction='setting',
-                max_days=1
+                max_days=0
             )
         elif event_type == "midnight":
             return self._sun_helper.get_time_at_elevation(
                 start_dt=start_dt,
                 target_elev=0,
                 direction='rising',
-                max_days=1
+                max_days=0
             )
         elif event_type == "sunrise":
             return self._sun_helper.get_time_at_elevation(
                 start_dt=start_dt,
                 target_elev=0,
                 direction='rising',
-                max_days=1
+                max_days=0
             )
         elif event_type == "sunset":
             return self._sun_helper.get_time_at_elevation(
                 start_dt=start_dt,
                 target_elev=0,
                 direction='setting',
-                max_days=1
+                max_days=0
             )
         else:
             return None
