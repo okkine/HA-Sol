@@ -367,7 +367,9 @@ class SolSolsticeCurveSensor(BaseSolSensor):
                 "previous_solstice": prev_solstice.isoformat(),
                 "next_solstice": next_solstice.isoformat(),
                 "calculation_time": calculation_time.isoformat(),
-                "event_type_used": event_type_used
+                "event_type_used": event_type_used,
+                "update_time_local": now_local.isoformat(),
+                "update_time_utc": now.isoformat()
             }
             
             _LOGGER.debug(
