@@ -266,14 +266,16 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                 target_elevation=self._current_rising_elev,
                 start_time=today_start_utc,
                 search_days=0,  # Only look for today's event
-                caller=self.name
+                caller=self.name,
+                direction="rising"
             )
             
             today_set = self._sun_helper.get_time_at_elevation(
                 target_elevation=self._current_setting_elev,
                 start_time=today_start_utc,
                 search_days=0,  # Only look for today's event
-                caller=self.name
+                caller=self.name,
+                direction="setting"
             )
             
             # If no events today, search 365 days ahead for next events to display
@@ -282,7 +284,8 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     target_elevation=self._current_rising_elev,
                     start_time=today_start_utc,
                     search_days=365,  # Look up to 365 days ahead
-                    caller=self.name
+                    caller=self.name,
+                    direction="rising"
                 )
             
             if not today_set:
@@ -290,7 +293,8 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     target_elevation=self._current_setting_elev,
                     start_time=today_start_utc,
                     search_days=365,  # Look up to 365 days ahead
-                    caller=self.name
+                    caller=self.name,
+                    direction="setting"
                 )
             
             # === CALCULATE NEXT CHANGE TIME ===
@@ -311,14 +315,16 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                     target_elevation=self._current_rising_elev,
                     start_time=now,
                     search_days=365,  # Look up to 365 days ahead
-                    caller=self.name
+                    caller=self.name,
+                    direction="rising"
                 )
                 
                 next_set = self._sun_helper.get_time_at_elevation(
                     target_elevation=self._current_setting_elev,
                     start_time=now,
                     search_days=365,  # Look up to 365 days ahead
-                    caller=self.name
+                    caller=self.name,
+                    direction="setting"
                 )
                 
                 # Determine which next event comes first

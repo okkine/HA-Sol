@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 16:25 - Muted sun position logs to focus on elevation sensor debugging"
+TEST_VERSION = "2025-06-29 16:35 - Fixed binary sensor direction-aware elevation search"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
