@@ -47,37 +47,43 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         now = dt_util.utcnow()  # Already in UTC
         now_local = dt_util.as_local(now)
         
-        # Start from beginning of today in local time, then convert to UTC once
-        start_of_day_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_day = start_of_day_local.astimezone(dt_util.UTC)
+        # Start from beginning of today in local time
+        start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_today_utc = start_of_today_local.astimezone(dt_util.UTC)
+        
+        # Get today's sunrise and sunset times
+        todays_sunrise = sun_helper.get_time_at_elevation(
+            start_dt=start_of_today_utc,
+            target_elev=0,
+            direction='rising',
+            max_days=0
+        )
+        todays_sunset = sun_helper.get_time_at_elevation(
+            start_dt=start_of_today_utc,
+            target_elev=0,
+            direction='setting',
+            max_days=0
+        )
         
         # Determine calculation time based on whether it's before or after noon
         if now_local.hour < 12:
-            # Before noon: use today's sunrise (0 degrees rising)
-            calculation_time = sun_helper.get_time_at_elevation(
-                start_dt=start_of_day,  # Already in UTC
-                target_elev=0,
-                direction='rising',
-                max_days=0
-            )
+            # Before noon: use today's sunrise
+            calculation_time = todays_sunrise
             event_type_used = "today's sunrise"
         else:
-            # After noon: use today's sunset (0 degrees setting)
-            calculation_time = sun_helper.get_time_at_elevation(
-                start_dt=start_of_day,  # Already in UTC
-                target_elev=0,
-                direction='setting',
-                max_days=0
-            )
+            # After noon: use today's sunset
+            calculation_time = todays_sunset
             event_type_used = "today's sunset"
         
-        # Fallback to current time if no events found
+        # Fallback to current time only if we couldn't get either time
         if not calculation_time:
-            calculation_time = now  # Already in UTC
-            event_type_used = "current_time"
+            _LOGGER.warning("Could not determine today's %s time, using current time", 
+                          "sunrise" if now_local.hour < 12 else "sunset")
+            calculation_time = now
+            event_type_used = "current_time (fallback)"
         
         # Calculate solstice curve at the determined calculation time
-        normalized, prev_solstice, next_solstice = calculator.get_normalized_curve(date_time=calculation_time)  # calculation_time is already UTC
+        normalized, prev_solstice, next_solstice = calculator.get_normalized_curve(date_time=calculation_time)
         
         # Update global storage
         SOLSTICE_CURVE_STORE['value'] = normalized
@@ -86,8 +92,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SOLSTICE_CURVE_STORE['calculation_time'] = calculation_time
         
         _LOGGER.debug(
-            "Initialized solstice curve value using %s at %s: %.4f (local time: %s)",
-            event_type_used, calculation_time, normalized, now_local
+            "Initialized solstice curve value using %s at %s: %.4f (local time: %s, sunrise: %s, sunset: %s)",
+            event_type_used, calculation_time, normalized, now_local,
+            todays_sunrise.isoformat() if todays_sunrise else "unknown",
+            todays_sunset.isoformat() if todays_sunset else "unknown"
         )
     except Exception as e:
         _LOGGER.error("Error initializing solstice curve: %s", e)

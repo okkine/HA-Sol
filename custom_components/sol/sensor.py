@@ -329,28 +329,49 @@ class SolSolsticeCurveSensor(BaseSolSensor):
         }
 
     async def _async_update_logic(self, now):
-        now = now or dt_util.utcnow()
+        """Update the solstice curve value.
         
+        This method ensures we always use today's sunrise (before noon) or sunset (after noon)
+        for the calculation time. Updates are scheduled for local noon and midnight.
+        """
         try:
             # Convert to local time to determine if it's before or after noon
             local_tz = dt_util.get_time_zone(self._time_zone)
             now_local = now.astimezone(local_tz)
             
-            # Determine calculation time based on whether it's before or after noon
-            if now_local.hour < 12:
-                # Before noon: use 0 degrees rising (sunrise)
-                calculation_time = self._get_next_solar_event_time(now, "sunrise")
-                event_type_used = "sunrise"
-            else:
-                # After noon: use 0 degrees setting (sunset)
-                calculation_time = self._get_next_solar_event_time(now, "sunset")
-                event_type_used = "sunset"
+            # Start from beginning of today in local time
+            start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            start_of_today_utc = start_of_today_local.astimezone(dt_util.UTC)
             
-            # Fallback to current time if no events found
+            # Get today's sunrise and sunset times
+            todays_sunrise = self._sun_helper.get_time_at_elevation(
+                start_dt=start_of_today_utc,
+                target_elev=0,
+                direction='rising',
+                max_days=0
+            )
+            todays_sunset = self._sun_helper.get_time_at_elevation(
+                start_dt=start_of_today_utc,
+                target_elev=0,
+                direction='setting',
+                max_days=0
+            )
+            
+            # Use appropriate time based on whether it's before or after noon
+            if now_local.hour < 12:
+                calculation_time = todays_sunrise
+                event_type_used = "today's sunrise"
+            else:
+                calculation_time = todays_sunset
+                event_type_used = "today's sunset"
+            
+            # Fallback to current time only if we couldn't get either time
             if not calculation_time:
+                _LOGGER.warning("Could not determine today's %s time, using current time", 
+                              "sunrise" if now_local.hour < 12 else "sunset")
                 calculation_time = now
-                event_type_used = "current_time"
-                
+                event_type_used = "current_time (fallback)"
+            
             # Calculate solstice curve at the determined calculation time
             normalized, prev_solstice, next_solstice = \
                 self._solstice_calculator.get_normalized_curve(calculation_time)
@@ -368,6 +389,8 @@ class SolSolsticeCurveSensor(BaseSolSensor):
                 "next_solstice": next_solstice.isoformat(),
                 "calculation_time": calculation_time.isoformat(),
                 "event_type_used": event_type_used,
+                "todays_sunrise": todays_sunrise.isoformat() if todays_sunrise else None,
+                "todays_sunset": todays_sunset.isoformat() if todays_sunset else None,
                 "update_time_local": now_local.isoformat(),
                 "update_time_utc": now.isoformat()
             }
@@ -381,63 +404,34 @@ class SolSolsticeCurveSensor(BaseSolSensor):
             _LOGGER.error("Error updating solstice curve: %s", e, exc_info=True)
             return now + timedelta(minutes=15)  # Retry in 15 minutes
         
-        # Schedule next update at fixed local times (solar noon and midnight)
-        return self._get_next_local_update_time(now)
+        # Schedule next update at local noon or midnight
+        return self._get_next_local_update_time(now_local)
 
-    def _get_next_solar_event_time(self, now, event_type):
-        """Get the NEXT solar event time after the current time."""
-        # Start search from now
-        start_dt = now.astimezone(timezone.utc)
+    def _get_next_local_update_time(self, now_local):
+        """Get next update time (local noon or midnight).
         
-        if event_type == "solar_noon":
-            return self._sun_helper.get_time_at_elevation(
-                start_dt=start_dt,
-                target_elev=0,
-                direction='setting',
-                max_days=0
-            )
-        elif event_type == "midnight":
-            return self._sun_helper.get_time_at_elevation(
-                start_dt=start_dt,
-                target_elev=0,
-                direction='rising',
-                max_days=0
-            )
-        elif event_type == "sunrise":
-            return self._sun_helper.get_time_at_elevation(
-                start_dt=start_dt,
-                target_elev=0,
-                direction='rising',
-                max_days=0
-            )
-        elif event_type == "sunset":
-            return self._sun_helper.get_time_at_elevation(
-                start_dt=start_dt,
-                target_elev=0,
-                direction='setting',
-                max_days=0
-            )
-        else:
-            return None
-
-    def _get_next_local_update_time(self, now_utc):
-        """Get next local solar noon and midnight for SCHEDULING updates."""
-        # Convert to local timezone
-        local_tz = dt_util.get_time_zone(self._time_zone)
-        now_local = now_utc.astimezone(local_tz)
+        Args:
+            now_local: Current time in local timezone
         
-        # Calculate next local solar noon (12:00) and midnight (00:00)
-        next_solar_noon_local = now_local.replace(hour=12, minute=0, second=0, microsecond=0)
-        if now_local >= next_solar_noon_local:
-            next_solar_noon_local += timedelta(days=1)
+        Returns:
+            Next update time in UTC
+        """
+        # Calculate next local noon (12:00) and midnight (00:00)
+        next_noon = now_local.replace(hour=12, minute=0, second=0, microsecond=0)
+        if now_local >= next_noon:
+            next_noon += timedelta(days=1)
             
-        next_midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        if now_local >= next_midnight_local:
-            next_midnight_local += timedelta(days=1)
+        next_midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        if now_local >= next_midnight:
+            next_midnight += timedelta(days=1)
         
-        # Convert back to UTC
-        next_solar_noon_utc = next_solar_noon_local.astimezone(timezone.utc)
-        next_midnight_utc = next_midnight_local.astimezone(timezone.utc)
+        # Return whichever comes first, converted to UTC
+        next_update_local = min(next_noon, next_midnight)
+        next_update_utc = next_update_local.astimezone(dt_util.UTC)
         
-        # Return whichever comes first
-        return min(next_solar_noon_utc, next_midnight_utc)
+        _LOGGER.debug(
+            "Next update scheduled for %s local time",
+            next_update_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+        )
+        
+        return next_update_utc
