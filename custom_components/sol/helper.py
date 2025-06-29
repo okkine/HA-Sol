@@ -605,10 +605,7 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
     
     async def async_update(self) -> None:
         """Update the sensor."""
-        # Call parent update first
-        await super().async_update()
-        
-        # Then call child update logic and schedule next update
+        # Call child update logic and schedule next update
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
             next_update = await getattr(self, '_async_update_logic')(now)
@@ -624,10 +621,7 @@ class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
     
     async def async_update(self) -> None:
         """Update the binary sensor."""
-        # Call parent update first
-        await super().async_update()
-        
-        # Then call child update logic and schedule next update
+        # Call child update logic and schedule next update
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
             next_update = await getattr(self, '_async_update_logic')(now)
