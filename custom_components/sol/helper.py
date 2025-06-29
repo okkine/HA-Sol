@@ -59,9 +59,22 @@ class SunHelper:
 
     # === POSITION CALCULATION ===
     def calculate_position(self, date_time: Optional[datetime] = None) -> tuple[float, float]:
-        """Calculate current sun elevation and azimuth (degrees)."""
+        """Calculate current sun elevation and azimuth (degrees).
+        
+        Args:
+            date_time: Optional timezone-aware datetime. If None, current UTC time will be used.
+            
+        Returns:
+            Tuple of (elevation, azimuth) in degrees
+            
+        Raises:
+            ValueError: If the datetime is not timezone-aware
+        """
+        # Ensure we have a timezone-aware datetime
         if date_time is None:
             date_time = datetime.now(timezone.utc)
+        elif date_time.tzinfo is None:
+            raise ValueError("date_time must be timezone-aware")
         
         try:
             observer = self._setup_observer(date_time)
@@ -254,8 +267,23 @@ class SunHelper:
         return None
 
     def sun_direction(self, cur_dttm: datetime) -> str:
+        """Determine if the sun is rising at the given datetime.
+        
+        Args:
+            cur_dttm: A timezone-aware datetime object
+            
+        Returns:
+            'rising' or 'setting'
+            
+        Raises:
+            ValueError: If the datetime is not timezone-aware
+        """
         try:
-            """Determine if the sun is rising at the given datetime."""
+            # Ensure datetime is timezone-aware
+            if cur_dttm is None:
+                raise ValueError("date_time must not be None")
+            if cur_dttm.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
             
             # Get timezone from input datetime
             tz = cur_dttm.tzinfo
@@ -267,7 +295,7 @@ class SunHelper:
             # Helper function to get solar events
             def get_solar_event(date, event_type):
                 """Get solar event datetime for a given local date."""
-                # FIXED: Use replace instead of localize
+                # Create timezone-aware datetime at midnight
                 start = datetime.combine(date, time(0, 0)).replace(tzinfo=tz)
                 end = start + ONE_DAY
                 
@@ -309,12 +337,11 @@ class SunHelper:
             
             # Add fallback at the end of the method
             if not tl_dttm or not tr_dttm:
-                    # Fallback to elevation trend method
-                    future = cur_dttm + timedelta(minutes=15)
-                    future_elev = self.calculate_position(future)[0]
-                    current_elev = self.calculate_position(cur_dttm)[0]
-                    return "rising" if future_elev > current_elev else "setting"
-            
+                # Fallback to elevation trend method
+                future = cur_dttm + timedelta(minutes=15)
+                future_elev = self.calculate_position(future)[0]
+                current_elev = self.calculate_position(cur_dttm)[0]
+                return "rising" if future_elev > current_elev else "setting"
             
             # Final validation before return
             if tr_elev > tl_elev:
