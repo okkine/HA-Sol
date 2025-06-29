@@ -581,13 +581,69 @@ class BaseSolEntity:
 
 class BaseSolSensor(BaseSolEntity, SensorEntity):
     """Base class for Sol sensor entities."""
-    pass
+    
+    async def async_update(self) -> None:
+        """Update the entity."""
+        try:
+            # Get current time in UTC
+            now = datetime.now(timezone.utc)
+            
+            # Create sun helper
+            sun_helper = SunHelper(
+                self.hass.config.latitude,  # type: ignore
+                self.hass.config.longitude,  # type: ignore
+                self.hass.config.elevation,  # type: ignore
+            )
+            
+            # Get current elevation and azimuth
+            self._elevation, self._azimuth = self._get_current_elevation(now, sun_helper)
+            
+            # Get sun direction
+            self._direction = self._get_sun_direction_with_fallback(now, sun_helper)
+            
+            # Get next solar events
+            self._next_change = self._get_solar_event_fallback(now, sun_helper)
+            
+            # Call subclass update logic
+            if hasattr(self, '_async_update_logic'):
+                self._next_change = await self._async_update_logic(now)
+            
+        except Exception as e:
+            _LOGGER.error("Error updating entity: %s", str(e))
+            raise
 
 class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
     """Base class for Sol binary sensor entities."""
-    pass
-
-        
+    
+    async def async_update(self) -> None:
+        """Update the entity."""
+        try:
+            # Get current time in UTC
+            now = datetime.now(timezone.utc)
+            
+            # Create sun helper
+            sun_helper = SunHelper(
+                self.hass.config.latitude,  # type: ignore
+                self.hass.config.longitude,  # type: ignore
+                self.hass.config.elevation,  # type: ignore
+            )
+            
+            # Get current elevation and azimuth
+            self._elevation, self._azimuth = self._get_current_elevation(now, sun_helper)
+            
+            # Get sun direction
+            self._direction = self._get_sun_direction_with_fallback(now, sun_helper)
+            
+            # Get next solar events
+            self._next_change = self._get_solar_event_fallback(now, sun_helper)
+            
+            # Call subclass update logic
+            if hasattr(self, '_async_update_logic'):
+                self._next_change = await self._async_update_logic(now)
+            
+        except Exception as e:
+            _LOGGER.error("Error updating entity: %s", str(e))
+            raise
 
 class SolCalculateSolsticeCurve:
     """Calculate the normalized solstice transition curve (0-1) where 0=winter solstice, 1=summer solstice."""
