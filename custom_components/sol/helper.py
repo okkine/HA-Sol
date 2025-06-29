@@ -507,6 +507,8 @@ class BaseSolEntity:
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         await super().async_added_to_hass()  # type: ignore[misc]
+        # Initialize _next_change to current time + 5 minutes as fallback
+        self._next_change = dt_util.utcnow() + timedelta(minutes=5)
         # Schedule first update
         if self.hass is not None:
             await self.async_update()
