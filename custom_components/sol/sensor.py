@@ -335,9 +335,15 @@ class SolSolsticeCurveSensor(BaseSolSensor):
         for the calculation time. Updates are scheduled for local noon and midnight.
         """
         try:
+            # Ensure we have a timezone-aware datetime
+            if now is None:
+                now = dt_util.utcnow()
+            elif now.tzinfo is None:
+                now = dt_util.as_utc(now)
+            
             # Convert to local time to determine if it's before or after noon
             local_tz = dt_util.get_time_zone(self._time_zone)
-            now_local = now.astimezone(local_tz)
+            now_local = dt_util.as_local(now)
             
             # Start from beginning of today in local time
             start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -402,7 +408,8 @@ class SolSolsticeCurveSensor(BaseSolSensor):
             
         except Exception as e:
             _LOGGER.error("Error updating solstice curve: %s", e, exc_info=True)
-            return now + timedelta(minutes=15)  # Retry in 15 minutes
+            # Ensure we return a timezone-aware datetime even in error case
+            return dt_util.utcnow() + timedelta(minutes=15)  # Retry in 15 minutes
         
         # Schedule next update at local noon or midnight
         return self._get_next_local_update_time(now_local)

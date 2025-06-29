@@ -43,9 +43,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             domain_config.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE)
         )
         
-        # Get current time and convert to local
-        now = dt_util.utcnow()  # Already in UTC
-        now_local = dt_util.as_local(now)
+        # Get current time and ensure timezone awareness
+        now = dt_util.utcnow()  # Always returns timezone-aware UTC datetime
+        now_local = dt_util.as_local(now)  # Convert to local timezone
         
         # Start from beginning of today in local time
         start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -53,13 +53,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         
         # Get today's sunrise and sunset times
         todays_sunrise = sun_helper.get_time_at_elevation(
-            start_dt=start_of_today_utc,
+            start_dt=start_of_today_utc,  # Already timezone-aware UTC
             target_elev=0,
             direction='rising',
             max_days=0
         )
         todays_sunset = sun_helper.get_time_at_elevation(
-            start_dt=start_of_today_utc,
+            start_dt=start_of_today_utc,  # Already timezone-aware UTC
             target_elev=0,
             direction='setting',
             max_days=0
@@ -79,7 +79,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         if not calculation_time:
             _LOGGER.warning("Could not determine today's %s time, using current time", 
                           "sunrise" if now_local.hour < 12 else "sunset")
-            calculation_time = now
+            calculation_time = now  # Already timezone-aware UTC
             event_type_used = "current_time (fallback)"
         
         # Calculate solstice curve at the determined calculation time
