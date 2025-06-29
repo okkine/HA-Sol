@@ -126,6 +126,10 @@ class SolElevationSensor(BaseSolSensor):
         self._current_direction = None
         self._target_elevation = None
         self._next_change = None
+        self._solar_noon_time = None
+        self._solar_noon_elevation = None
+        self._solar_midnight_time = None
+        self._solar_midnight_elevation = None
         
     @property
     def extra_state_attributes(self):
@@ -135,7 +139,11 @@ class SolElevationSensor(BaseSolSensor):
             "direction": self._current_direction,
             "target_elevation": self._target_elevation,
             "current_elevation_raw": getattr(self, '_current_elevation_raw', None),
-            "current_azimuth_raw": getattr(self, '_current_azimuth_raw', None)
+            "current_azimuth_raw": getattr(self, '_current_azimuth_raw', None),
+            "solar_noon_time": self._solar_noon_time,
+            "solar_noon_elevation": self._solar_noon_elevation,
+            "solar_midnight_time": self._solar_midnight_time,
+            "solar_midnight_elevation": self._solar_midnight_elevation
         }
 
     async def _async_update_logic(self, now):
@@ -160,6 +168,35 @@ class SolElevationSensor(BaseSolSensor):
         
         # Store the direction for state attributes
         self._current_direction = direction
+
+        # Get solar noon and midnight times and elevations
+        try:
+            solar_noon = self._sun_helper.get_next_solar_noon(now)
+            if solar_noon:
+                noon_elev, _ = self._sun_helper.calculate_position(solar_noon)
+                self._solar_noon_time = solar_noon.isoformat()
+                self._solar_noon_elevation = round(noon_elev, 2)
+            else:
+                self._solar_noon_time = None
+                self._solar_noon_elevation = None
+        except Exception as e:
+            _LOGGER.debug("Error getting solar noon: %s", e)
+            self._solar_noon_time = None
+            self._solar_noon_elevation = None
+
+        try:
+            solar_midnight = self._sun_helper.get_next_solar_midnight(now)
+            if solar_midnight:
+                midnight_elev, _ = self._sun_helper.calculate_position(solar_midnight)
+                self._solar_midnight_time = solar_midnight.isoformat()
+                self._solar_midnight_elevation = round(midnight_elev, 2)
+            else:
+                self._solar_midnight_time = None
+                self._solar_midnight_elevation = None
+        except Exception as e:
+            _LOGGER.debug("Error getting solar midnight: %s", e)
+            self._solar_midnight_time = None
+            self._solar_midnight_elevation = None
 
         # Calculate next target elevation
         if direction == "rising":
@@ -345,7 +382,7 @@ class SolSolsticeCurveSensor(BaseSolSensor):
                 "todays_sunrise": todays_sunrise.isoformat() if todays_sunrise else None,
                 "todays_sunset": todays_sunset.isoformat() if todays_sunset else None,
                 "update_time_local": now_local.isoformat(),
-                "update_time_utc": now.isoformat()
+                "update_time_utc": dt_util.as_utc(now).isoformat()
             }
             
             _LOGGER.debug(
