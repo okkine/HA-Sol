@@ -1,6 +1,6 @@
 # binary_sensor.py
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time
 from homeassistant.util import dt as dt_util
 from .helper import SunHelper, BaseSolBinarySensor, SolCalculateSolsticeCurve, SOLSTICE_CURVE_STORE
 from .const import (
@@ -255,11 +255,16 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             
             # === CALCULATE TODAY'S RISE AND SET TIMES ===
             # Get today's rise and set times for the current thresholds
-            # Start search from beginning of today to ensure we get today's events
+            # Use date-only conversion to handle timezone boundaries correctly
             local_tz = dt_util.get_time_zone(self._time_zone)
             now_local = now.astimezone(local_tz)
-            today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_start_utc = today_start.astimezone(timezone.utc)
+            today_local_date = now_local.date()  # Just the date part
+            today_start_utc = datetime.combine(today_local_date, time.min, tzinfo=local_tz).astimezone(timezone.utc)
+            
+            _LOGGER.debug(
+                "%s: Date conversion - now=%s, now_local=%s, today_local_date=%s, today_start_utc=%s",
+                self.name, now, now_local, today_local_date, today_start_utc
+            )
             
             # Always try to get today's events first (even if they've passed)
             today_rise = self._sun_helper.get_time_at_elevation(

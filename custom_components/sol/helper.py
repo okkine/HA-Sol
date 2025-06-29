@@ -425,7 +425,11 @@ class SunHelper:
             # Convert to UTC for calculations
             start_dt_utc = start_dt.astimezone(timezone.utc)
             
-            # Get initial elevation
+            # Create observer with target elevation as horizon
+            observer = self._setup_observer(start_dt_utc)
+            observer.horizon = str(target_elev)  # Set target elevation as horizon
+            
+            # Get initial elevation to determine if we need to advance to next day
             elev, _ = self.calculate_position(start_dt_utc, caller)
             
             # Determine search direction based on current elevation and target
@@ -442,27 +446,55 @@ class SunHelper:
                         start_dt_utc = start_dt_utc + timedelta(days=1)
                         start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
             
-            # Search for crossing time
-            test_dt = start_dt_utc
-            end_dt = start_dt_utc + timedelta(days=max_days if max_days > 0 else 1)
+            # Set observer date using just the date part (ephem handles timezone conversion automatically)
+            # Convert local date to UTC date - this automatically handles date boundary crossing
+            local_date = start_dt.date()  # Get just the date part
+            utc_date = start_dt.astimezone(timezone.utc).date()  # Convert to UTC date
+            observer.date = ephem.Date(utc_date)
             
-            prev_elev = None
-            while test_dt <= end_dt:
-                elev, _ = self.calculate_position(test_dt, caller)
-                
-                if prev_elev is not None:
-                    # Check if we've crossed the target elevation
-                    if direction == 'rising':
-                        if prev_elev <= target_elev and elev >= target_elev:
-                            # Found rising crossing
-                            return test_dt
-                    else:  # setting
-                        if prev_elev >= target_elev and elev <= target_elev:
-                            # Found setting crossing
-                            return test_dt
-                
-                prev_elev = elev
-                test_dt = test_dt + timedelta(hours=1)  # Hourly increments
+            _LOGGER.debug(
+                "%s: Date conversion - start_dt=%s, local_date=%s, utc_date=%s, observer_date=%s",
+                caller, start_dt, local_date, utc_date, observer.date
+            )
+            
+            # Use ephem's built-in rise/set calculations
+            try:
+                if direction == 'rising':
+                    # Get next rising time
+                    next_rise = observer.next_rising(self._sun)
+                    if next_rise is not None:
+                        # Convert ephem date to datetime
+                        rise_dt = next_rise.datetime().replace(tzinfo=timezone.utc)
+                        
+                        _LOGGER.debug(
+                            "%s: Ephem rising calculation - target_elev=%.2f°, start_dt_utc=%s, next_rise=%s, rise_dt=%s",
+                            caller, target_elev, start_dt_utc, next_rise, rise_dt
+                        )
+                        
+                        # Check if it's within our search window
+                        end_dt = start_dt_utc + timedelta(days=max_days if max_days > 0 else 1)
+                        if rise_dt <= end_dt:
+                            return rise_dt
+                else:  # setting
+                    # Get next setting time
+                    next_set = observer.next_setting(self._sun)
+                    if next_set is not None:
+                        # Convert ephem date to datetime
+                        set_dt = next_set.datetime().replace(tzinfo=timezone.utc)
+                        
+                        _LOGGER.debug(
+                            "%s: Ephem setting calculation - target_elev=%.2f°, start_dt_utc=%s, next_set=%s, set_dt=%s",
+                            caller, target_elev, start_dt_utc, next_set, set_dt
+                        )
+                        
+                        # Check if it's within our search window
+                        end_dt = start_dt_utc + timedelta(days=max_days if max_days > 0 else 1)
+                        if set_dt <= end_dt:
+                            return set_dt
+                            
+            except (ephem.AlwaysUpError, ephem.NeverUpError):
+                # Sun never reaches this elevation at this location
+                return None
             
             return None
             
