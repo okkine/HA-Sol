@@ -330,22 +330,26 @@ class SolSolsticeCurveSensor(BaseSolSensor):
         now = now or dt_util.utcnow()
         
         try:
-            # Get the NEXT solar events (solar noon and midnight) after the current time
-            solar_noon = self._get_next_solar_event_time(now, "solar_noon")
-            next_midnight = self._get_next_solar_event_time(now, "midnight")
+            # Convert to local time to determine if it's before or after noon
+            local_tz = dt_util.get_time_zone(self._time_zone)
+            now_local = now.astimezone(local_tz)
             
-            # Determine which event comes first
-            if solar_noon and next_midnight:
-                calculation_time = min(solar_noon, next_midnight)
-            elif solar_noon:
-                calculation_time = solar_noon
-            elif next_midnight:
-                calculation_time = next_midnight
+            # Determine calculation time based on whether it's before or after noon
+            if now_local.hour < 12:
+                # Before noon: use 0 degrees rising (sunrise)
+                calculation_time = self._get_next_solar_event_time(now, "sunrise")
+                event_type_used = "sunrise"
             else:
-                # Fallback to current time if no events found
+                # After noon: use 0 degrees setting (sunset)
+                calculation_time = self._get_next_solar_event_time(now, "sunset")
+                event_type_used = "sunset"
+            
+            # Fallback to current time if no events found
+            if not calculation_time:
                 calculation_time = now
+                event_type_used = "current_time"
                 
-            # Calculate solstice curve at the next solar event time
+            # Calculate solstice curve at the determined calculation time
             normalized, prev_solstice, next_solstice = \
                 self._solstice_calculator.get_normalized_curve(calculation_time)
             
@@ -360,12 +364,13 @@ class SolSolsticeCurveSensor(BaseSolSensor):
             self._attr_extra_state_attributes = {
                 "previous_solstice": prev_solstice.isoformat(),
                 "next_solstice": next_solstice.isoformat(),
-                "calculation_time": calculation_time.isoformat()
+                "calculation_time": calculation_time.isoformat(),
+                "event_type_used": event_type_used
             }
             
             _LOGGER.debug(
-                "Solstice curve updated for next event at %s: %.4f (prev: %s, next: %s)",
-                calculation_time, normalized, prev_solstice, next_solstice
+                "Solstice curve updated using %s at %s: %.4f (prev: %s, next: %s)",
+                event_type_used, calculation_time, normalized, prev_solstice, next_solstice
             )
             
         except Exception as e:
@@ -387,14 +392,29 @@ class SolSolsticeCurveSensor(BaseSolSensor):
                 direction='setting',
                 max_days=1
             )
-        else:  # midnight
+        elif event_type == "midnight":
             return self._sun_helper.get_time_at_elevation(
                 start_dt=start_dt,
                 target_elev=0,
                 direction='rising',
                 max_days=1
             )
-
+        elif event_type == "sunrise":
+            return self._sun_helper.get_time_at_elevation(
+                start_dt=start_dt,
+                target_elev=0,
+                direction='rising',
+                max_days=1
+            )
+        elif event_type == "sunset":
+            return self._sun_helper.get_time_at_elevation(
+                start_dt=start_dt,
+                target_elev=0,
+                direction='setting',
+                max_days=1
+            )
+        else:
+            return None
 
     def _get_next_local_update_time(self, now_utc):
         """Get next local solar noon and midnight for SCHEDULING updates."""
