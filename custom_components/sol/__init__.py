@@ -53,15 +53,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         
         # Get today's sunrise and sunset times
         todays_sunrise = sun_helper.get_time_at_elevation(
-            target_elevation=0,
-            start_time=start_of_today_utc,  # Already timezone-aware UTC
-            search_days=0,
+            start_dt=start_of_today_utc,  # Already timezone-aware UTC
+            target_elev=0,
+            direction='rising',
+            max_days=0,
             caller="init"
         )
         todays_sunset = sun_helper.get_time_at_elevation(
-            target_elevation=0,
-            start_time=start_of_today_utc,  # Already timezone-aware UTC
-            search_days=0,
+            start_dt=start_of_today_utc,  # Already timezone-aware UTC
+            target_elev=0,
+            direction='setting',
+            max_days=0,
             caller="init"
         )
         

@@ -388,97 +388,88 @@ class SunHelper:
         except Exception as e:
             raise DirectionError(f"Error getting sun direction: {str(e)}")
 
-    def get_time_at_elevation(self, target_elevation: float, start_time: datetime, 
-                            search_days: int = 365, caller: str = "unknown", 
-                            direction: str = "any") -> Optional[datetime]:
-        """Find the next time the sun reaches the target elevation.
+    def get_time_at_elevation(
+        self,
+        start_dt: datetime,
+        target_elev: float,
+        direction: Literal['rising', 'setting'],
+        max_days: int = 0,
+        use_center: bool = True,
+        caller: str = "unknown"
+    ) -> Optional[datetime]:
+        """Find the next time the sun reaches target elevation in the given direction.
         
         Args:
-            target_elevation: The elevation angle to search for (degrees)
-            start_time: The time to start searching from (timezone-aware)
-            search_days: Number of days to search ahead
+            start_dt: The datetime to start searching from
+            target_elev: The target elevation in degrees
+            direction: Whether to look for 'rising' or 'setting' crossing of target
+            max_days: Maximum days to search forward (0 for current day only)
+            use_center: Whether to use sun's center (True) or upper limb (False)
             caller: Name of the calling sensor/entity for debugging
-            direction: 'rising', 'setting', or 'any' to specify the direction
             
         Returns:
             The datetime when the sun reaches the target elevation, or None if not found
             
         Raises:
-            TimezoneError: If start_time is not timezone-aware
+            ValueError: If direction is not 'rising' or 'setting'
+            TimezoneError: If the datetime is not timezone-aware
             SolarCalculationError: If the calculation fails
         """
         try:
-            if start_time.tzinfo is None:
-                raise TimezoneError("start_time must be timezone-aware")
+            if start_dt.tzinfo is None:
+                raise TimezoneError("date_time must be timezone-aware")
             
-            # Search in hourly increments first
-            current_time = start_time
-            end_time = start_time + timedelta(days=search_days)
+            if direction not in ['rising', 'setting']:
+                raise ValueError("direction must be 'rising' or 'setting'")
             
-            # Get initial elevation to determine search direction
-            initial_elev, _ = self.calculate_position(current_time, caller)
+            # Convert to UTC for calculations
+            start_dt_utc = start_dt.astimezone(timezone.utc)
             
-            # First pass: hourly increments
-            prev_elev = initial_elev
-            while current_time <= end_time:
-                elevation, _ = self.calculate_position(current_time, caller)
+            # Get initial elevation
+            elev, _ = self.calculate_position(start_dt_utc, caller)
+            
+            # Determine search direction based on current elevation and target
+            # Only advance to next day if max_days > 0 (not when searching for today's events)
+            if max_days > 0:
+                if direction == 'rising':
+                    if elev > target_elev:
+                        # Sun is already above target, wait for next rising
+                        start_dt_utc = start_dt_utc + timedelta(days=1)
+                        start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+                else:  # setting
+                    if elev < target_elev:
+                        # Sun is already below target, wait for next day
+                        start_dt_utc = start_dt_utc + timedelta(days=1)
+                        start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Search for crossing time
+            test_dt = start_dt_utc
+            end_dt = start_dt_utc + timedelta(days=max_days if max_days > 0 else 1)
+            
+            prev_elev = None
+            while test_dt <= end_dt:
+                elev, _ = self.calculate_position(test_dt, caller)
                 
-                # Check if we've crossed the target elevation in the desired direction
-                if direction == "rising":
-                    # Looking for rising: prev_elev < target <= elevation
-                    if prev_elev < target_elevation <= elevation:
-                        # Found the hour, now refine to the minute
-                        search_start = current_time - timedelta(hours=1)
-                        search_end = current_time
-                        
-                        while search_start <= search_end:
-                            elev, _ = self.calculate_position(search_start, caller)
-                            if elev >= target_elevation:
-                                return search_start
-                            search_start += timedelta(minutes=1)
-                        
-                        # If we didn't find it in the minute search, return the hour
-                        return current_time
-                elif direction == "setting":
-                    # Looking for setting: prev_elev > target >= elevation
-                    if prev_elev > target_elevation >= elevation:
-                        # Found the hour, now refine to the minute
-                        search_start = current_time - timedelta(hours=1)
-                        search_end = current_time
-                        
-                        while search_start <= search_end:
-                            elev, _ = self.calculate_position(search_start, caller)
-                            if elev <= target_elevation:
-                                return search_start
-                            search_start += timedelta(minutes=1)
-                        
-                        # If we didn't find it in the minute search, return the hour
-                        return current_time
-                else:  # "any" direction
-                    # Check if we've crossed the target elevation in either direction
-                    if (prev_elev < target_elevation <= elevation) or (prev_elev > target_elevation >= elevation):
-                        # Found the hour, now refine to the minute
-                        search_start = current_time - timedelta(hours=1)
-                        search_end = current_time
-                        
-                        while search_start <= search_end:
-                            elev, _ = self.calculate_position(search_start, caller)
-                            if abs(elev - target_elevation) < 0.1:  # Within 0.1 degree
-                                return search_start
-                            search_start += timedelta(minutes=1)
-                        
-                        # If we didn't find it in the minute search, return the hour
-                        return current_time
+                if prev_elev is not None:
+                    # Check if we've crossed the target elevation
+                    if direction == 'rising':
+                        if prev_elev <= target_elev and elev >= target_elev:
+                            # Found rising crossing
+                            return test_dt
+                    else:  # setting
+                        if prev_elev >= target_elev and elev <= target_elev:
+                            # Found setting crossing
+                            return test_dt
                 
-                prev_elev = elevation
-                current_time += timedelta(hours=1)
+                prev_elev = elev
+                test_dt = test_dt + timedelta(hours=1)  # Hourly increments
             
             return None
             
         except TimezoneError:
             raise
         except Exception as e:
-            raise SolarCalculationError(f"Error finding time at elevation: {str(e)}")
+            raise SolarCalculationError(f"Error calculating elevation at {start_dt}: {str(e)}")
 
 class BaseSolEntity:
     """Base class for all Sol entities."""

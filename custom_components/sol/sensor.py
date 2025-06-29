@@ -264,9 +264,10 @@ class SolElevationSensor(BaseSolSensor):
         # Type assertion is safe here since direction is guaranteed to be 'rising' or 'setting'
         _LOGGER.debug("%s: Using normal path - calling get_time_at_elevation for target %.2f°", self.name, next_target)
         event_time = self._sun_helper.get_time_at_elevation(
-            target_elevation=next_target,
-            start_time=now,
-            search_days=1,
+            start_dt=now,
+            target_elev=next_target,
+            direction=direction,  # type: ignore[arg-type]
+            max_days=1,
             caller=self.name
         )
         
@@ -337,15 +338,17 @@ class SolSolsticeCurveSensor(BaseSolSensor):
             
             # Get today's sunrise and sunset times
             todays_sunrise = self._sun_helper.get_time_at_elevation(
-                target_elevation=0,
-                start_time=start_of_today_utc,
-                search_days=0,
+                start_dt=start_of_today_utc,
+                target_elev=0,
+                direction='rising',
+                max_days=0,
                 caller=self.name
             )
             todays_sunset = self._sun_helper.get_time_at_elevation(
-                target_elevation=0,
-                start_time=start_of_today_utc,
-                search_days=0,
+                start_dt=start_of_today_utc,
+                target_elev=0,
+                direction='setting',
+                max_days=0,
                 caller=self.name
             )
             
