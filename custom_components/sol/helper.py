@@ -459,7 +459,7 @@ class SunHelper:
                             return test_dt
                 
                 prev_elev = elev
-                test_dt = test_dt + timedelta(minutes=1)
+                test_dt = test_dt + timedelta(hours=1)  # Hourly increments
             
             return None
             
@@ -600,6 +600,12 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
                     # Calculate delay until next update
                     delay_seconds = (next_update - now).total_seconds()
                     if delay_seconds > 0:
+                        # Ensure minimum delay of 30 seconds to prevent rapid updates
+                        if delay_seconds < 30:
+                            _LOGGER.warning("%s: Calculated delay %.1f seconds is too short, using 30 seconds", 
+                                          self.name, delay_seconds)
+                            delay_seconds = 30
+                        
                         _LOGGER.info("%s: Scheduling next update in %.1f seconds (at %s)", 
                                     self.name, delay_seconds, next_update)
                         async_call_later(
@@ -608,10 +614,10 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
                             lambda _: self.async_update()
                         )
                     else:
-                        _LOGGER.warning("%s: Next update time is in the past, scheduling immediate update", self.name)
+                        _LOGGER.warning("%s: Next update time is in the past, scheduling update in 30 seconds", self.name)
                         async_call_later(
                             self.hass,
-                            1,  # 1 second delay
+                            30,  # 30 second delay instead of 1 second
                             lambda _: self.async_update()
                         )
                 else:
@@ -660,7 +666,13 @@ class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
                     # Calculate delay until next update
                     delay_seconds = (next_update - now).total_seconds()
                     if delay_seconds > 0:
-                        _LOGGER.debug("%s: Scheduling next update in %.1f seconds (at %s)", 
+                        # Ensure minimum delay of 30 seconds to prevent rapid updates
+                        if delay_seconds < 30:
+                            _LOGGER.warning("%s: Calculated delay %.1f seconds is too short, using 30 seconds", 
+                                          self.name, delay_seconds)
+                            delay_seconds = 30
+                        
+                        _LOGGER.info("%s: Scheduling next update in %.1f seconds (at %s)", 
                                     self.name, delay_seconds, next_update)
                         async_call_later(
                             self.hass, 
@@ -668,10 +680,10 @@ class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
                             lambda _: self.async_update()
                         )
                     else:
-                        _LOGGER.warning("%s: Next update time is in the past, scheduling immediate update", self.name)
+                        _LOGGER.warning("%s: Next update time is in the past, scheduling update in 30 seconds", self.name)
                         async_call_later(
                             self.hass,
-                            1,  # 1 second delay
+                            30,  # 30 second delay instead of 1 second
                             lambda _: self.async_update()
                         )
                 else:
