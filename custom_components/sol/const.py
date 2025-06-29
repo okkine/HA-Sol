@@ -4,8 +4,8 @@
 DOMAIN = "sol"
 NAME = "Sol"
 
-# Update version to reflect base entity update
-TEST_VERSION = "2025-06-29T14:00-0600-fix-base-entity-update"
+# Update version to reflect property access fix
+TEST_VERSION = "2025-06-29T14:30-0600-fix-property-access"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"

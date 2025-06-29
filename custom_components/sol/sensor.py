@@ -104,7 +104,7 @@ class SolElevationSensor(BaseSolSensor):
     def extra_state_attributes(self):
         """Return additional state attributes."""
         return {
-            "next_change": self.next_change,
+            "next_change": self._next_change,
             "direction": self._current_direction,
             "target_elevation": self._target_elevation,
             "current_elevation_raw": getattr(self, '_current_elevation_raw', None),
