@@ -576,6 +576,7 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         await super().async_added_to_hass()
+        _LOGGER.info("%s: Entity added to hass, scheduling first update in 1 second", self.name)
         # Trigger the first update immediately
         if self.hass is not None:
             async_call_later(
@@ -588,16 +589,18 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
     
     async def async_update(self) -> None:
         """Update the sensor."""
+        _LOGGER.info("%s: async_update called", self.name)
         # Call child update logic and schedule next update
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
             try:
+                _LOGGER.debug("%s: Calling _async_update_logic", self.name)
                 next_update = await getattr(self, '_async_update_logic')(now)
                 if next_update is not None:
                     # Calculate delay until next update
                     delay_seconds = (next_update - now).total_seconds()
                     if delay_seconds > 0:
-                        _LOGGER.debug("%s: Scheduling next update in %.1f seconds (at %s)", 
+                        _LOGGER.info("%s: Scheduling next update in %.1f seconds (at %s)", 
                                     self.name, delay_seconds, next_update)
                         async_call_later(
                             self.hass, 
@@ -627,6 +630,8 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
                     300,  # 5 minutes
                     lambda _: self.async_update()
                 )
+        else:
+            _LOGGER.error("%s: No _async_update_logic method found", self.name)
 
 class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
     """Base class for Sol binary sensors."""
