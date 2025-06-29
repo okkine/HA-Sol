@@ -125,7 +125,6 @@ class SolElevationSensor(BaseSolSensor):
         )
         self._current_direction = None
         self._target_elevation = None
-        self._next_change = None
         self._solar_noon_time = None
         self._solar_noon_elevation = None
         self._solar_midnight_time = None
@@ -135,7 +134,7 @@ class SolElevationSensor(BaseSolSensor):
     def extra_state_attributes(self):
         """Return additional state attributes."""
         return {
-            "next_change": self._next_change,
+            "next_change": getattr(self, '_next_change', None),
             "direction": self._current_direction,
             "target_elevation": self._target_elevation,
             "current_elevation_raw": getattr(self, '_current_elevation_raw', None),

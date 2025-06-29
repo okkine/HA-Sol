@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 14:46 - Fixed async_track_point_in_time callback signature for elevation sensor scheduling"
+TEST_VERSION = "2025-06-29 15:03 - Fixed elevation sensor update scheduling by removing conflicting _next_change property"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"

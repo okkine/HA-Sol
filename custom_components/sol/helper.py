@@ -469,7 +469,7 @@ class SunHelper:
             raise SolarCalculationError(f"Error calculating elevation at {start_dt}: {str(e)}")
 
 class BaseSolEntity:
-    """Base class for Sol entities."""
+    """Base class for all Sol entities."""
     
     def __init__(self, name_suffix: str, unique_id_suffix: str) -> None:
         """Initialize the entity."""
@@ -511,11 +511,7 @@ class BaseSolEntity:
         await super().async_added_to_hass()  # type: ignore[misc]
         # Initialize _next_change to current time + 5 minutes as fallback
         self._next_change = dt_util.utcnow() + timedelta(minutes=5)
-        # Schedule first update
-        if self.hass is not None:
-            await self.async_update()
-        else:
-            _LOGGER.error("Entity %s not properly initialized - hass instance is None", self._attr_name)
+        # The first update will be handled by the child class implementation
 
     def _get_current_elevation(self, now: Optional[datetime], sun_helper: 'SunHelper') -> Tuple[Optional[float], Optional[float]]:
         """Get current elevation and azimuth."""
@@ -539,8 +535,12 @@ class BaseSolEntity:
             return None
 
     def _get_solar_event_fallback(self, now: Optional[datetime], sun_helper: 'SunHelper') -> datetime:
-        """Get next solar event with fallback."""
+        """Get next solar event with fallback.
+        
+        This method always returns a datetime, never None.
+        """
         try:
+            # Ensure now is not None
             if now is None:
                 now = datetime.now(timezone.utc)
             
@@ -567,42 +567,8 @@ class BaseSolEntity:
                 
         except Exception as e:
             _LOGGER.error("Error getting solar events: %s", str(e))
-            if now is not None:
-                # Return current time + 1 hour as fallback
-                return now + timedelta(hours=1)
-            else:
-                # If now is None, use current UTC time
-                return datetime.now(timezone.utc) + timedelta(hours=1)
-
-    async def async_update(self) -> None:
-        """Update the entity."""
-        try:
-            # Get current time in UTC
-            now = datetime.now(timezone.utc)
-            
-            # Create sun helper
-            if self.hass is None:
-                _LOGGER.error("Entity %s not properly initialized - hass instance is None", self._attr_name)
-                return
-                
-            sun_helper = SunHelper(
-                self.hass.config.latitude,
-                self.hass.config.longitude,
-                self.hass.config.elevation
-            )
-            
-            # Get current elevation and azimuth
-            self._elevation, self._azimuth = self._get_current_elevation(now, sun_helper)
-            
-            # Get sun direction
-            self._direction = self._get_sun_direction_with_fallback(now, sun_helper)
-            
-            # Get next solar events
-            self._next_change = self._get_solar_event_fallback(now, sun_helper)
-            
-        except Exception as e:
-            _LOGGER.error("Error updating entity %s: %s", self._attr_name, str(e))
-            raise
+            # Always return a valid datetime
+            return datetime.now(timezone.utc) + timedelta(hours=1)
 
 class BaseSolSensor(BaseSolEntity, SensorEntity):
     """Base class for Sol sensors."""
@@ -612,12 +578,24 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
         # Call child update logic and schedule next update
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
-            next_update = await getattr(self, '_async_update_logic')(now)
-            if next_update is not None:
+            try:
+                next_update = await getattr(self, '_async_update_logic')(now)
+                if next_update is not None:
+                    _LOGGER.debug("%s: Scheduling next update at %s", self.name, next_update)
+                    async_track_point_in_time(
+                        self.hass, 
+                        lambda event: self.async_update(),
+                        next_update
+                    )
+                else:
+                    _LOGGER.warning("%s: No next update time returned from _async_update_logic", self.name)
+            except Exception as e:
+                _LOGGER.error("%s: Error in async_update: %s", self.name, e, exc_info=True)
+                # Schedule retry in 5 minutes
                 async_track_point_in_time(
-                    self.hass, 
+                    self.hass,
                     lambda event: self.async_update(),
-                    next_update
+                    dt_util.utcnow() + timedelta(minutes=5)
                 )
 
 class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
@@ -628,12 +606,24 @@ class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
         # Call child update logic and schedule next update
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
-            next_update = await getattr(self, '_async_update_logic')(now)
-            if next_update is not None:
+            try:
+                next_update = await getattr(self, '_async_update_logic')(now)
+                if next_update is not None:
+                    _LOGGER.debug("%s: Scheduling next update at %s", self.name, next_update)
+                    async_track_point_in_time(
+                        self.hass, 
+                        lambda event: self.async_update(),
+                        next_update
+                    )
+                else:
+                    _LOGGER.warning("%s: No next update time returned from _async_update_logic", self.name)
+            except Exception as e:
+                _LOGGER.error("%s: Error in async_update: %s", self.name, e, exc_info=True)
+                # Schedule retry in 5 minutes
                 async_track_point_in_time(
-                    self.hass, 
+                    self.hass,
                     lambda event: self.async_update(),
-                    next_update
+                    dt_util.utcnow() + timedelta(minutes=5)
                 )
 
 class SolCalculateSolsticeCurve:
