@@ -4,9 +4,8 @@
 DOMAIN = "sol"
 NAME = "Sol"
 
-# Test variable to verify new updates are loaded
-# Update this value when making changes to verify the integration is using the latest code
-TEST_VERSION = "2025-06-29T11:45-0600-fix-type-errors"
+# Update version to reflect error handling improvements
+TEST_VERSION = "2025-06-29T12:00-0600-improve-error-handling"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
@@ -18,5 +17,5 @@ CONF_WINTER_RISING_ELEVATION = "winter_rising_elevation"
 CONF_WINTER_SETTING_ELEVATION = "winter_setting_elevation"
 CONF_PRESSURE = "pressure"
 CONF_TEMPERATURE = "temperature"
-DEFAULT_PRESSURE = 1010.0
-DEFAULT_TEMPERATURE = 25.0
+DEFAULT_PRESSURE = 1010.0  # hPa
+DEFAULT_TEMPERATURE = 25.0  # °C

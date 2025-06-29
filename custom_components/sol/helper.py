@@ -2,7 +2,7 @@
 import math
 import ephem
 from datetime import datetime, timezone, timedelta, time
-from typing import Optional, Literal, Tuple, Union, cast
+from typing import Optional, Literal, Tuple, Union, cast, overload
 import logging
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_point_in_time
@@ -10,6 +10,10 @@ from homeassistant.util import slugify
 import homeassistant.util.dt as dt_util
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from .const import DOMAIN, NAME, TEST_VERSION
+from .exceptions import (
+    SolError, DateTimeError, TimezoneError, SolarCalculationError,
+    DirectionError, ElevationError, AzimuthError, SolsticeError
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,13 +50,13 @@ class SunHelper:
             Configured ephem.Observer object
             
         Raises:
-            ValueError: If the datetime is not timezone-aware
+            TimezoneError: If the datetime is not timezone-aware
         """
         # Ensure we have a timezone-aware datetime
         if date_time is None:
             date_time = datetime.now(timezone.utc)
         elif date_time.tzinfo is None:
-            raise ValueError("date_time must be timezone-aware")
+            raise TimezoneError("date_time must be timezone-aware")
             
         observer = ephem.Observer()
         observer.lat = str(self.latitude)
@@ -75,13 +79,15 @@ class SunHelper:
             Tuple of (elevation, azimuth) in degrees
             
         Raises:
-            ValueError: If the datetime is not timezone-aware
+            TimezoneError: If the datetime is not timezone-aware
+            ElevationError: If elevation calculation fails
+            AzimuthError: If azimuth calculation fails
         """
         # Ensure we have a timezone-aware datetime
         if date_time is None:
             date_time = datetime.now(timezone.utc)
         elif date_time.tzinfo is None:
-            raise ValueError("date_time must be timezone-aware")
+            raise TimezoneError("date_time must be timezone-aware")
         
         try:
             observer = self._setup_observer(date_time)
@@ -99,8 +105,7 @@ class SunHelper:
             
             # Validate results
             if not (-90 <= elevation <= 90):
-                _LOGGER.warning("Calculated elevation %.2f° is outside valid range [-90, 90]", elevation)
-                elevation = max(-90, min(90, elevation))
+                raise ElevationError(f"Calculated elevation {elevation}° is outside valid range [-90, 90]")
             
             # Azimuth should be 0-360°, but 360° is equivalent to 0°
             if azimuth < 0:
@@ -111,71 +116,87 @@ class SunHelper:
             
             return elevation, azimuth
             
+        except TimezoneError:
+            raise
+        except ElevationError:
+            raise
         except Exception as e:
-            _LOGGER.error("Error calculating sun position: %s", e)
-            # Return fallback values (sun below horizon)
-            return -90.0, 0.0
+            raise SolarCalculationError(f"Error calculating sun position: {str(e)}")
 
     # === SOLAR EVENT CALCULATIONS ===
+    @overload
+    def get_peak_elevation_time(self, start_dt: datetime) -> Optional[datetime]:
+        ...
+
     def get_peak_elevation_time(self, start_dt: datetime) -> Optional[datetime]:
         """Get the time of peak elevation (solar noon) after the given datetime."""
         try:
             if start_dt.tzinfo is None:
-                raise ValueError("date_time must be timezone-aware")
+                raise TimezoneError("date_time must be timezone-aware")
             event_time = self.get_next_solar_noon(start_dt)
             if event_time is None:
                 _LOGGER.debug("No peak elevation time found")
             return event_time
+        except TimezoneError:
+            raise
         except Exception as e:
-            _LOGGER.error("Error getting peak elevation time: %s", e)
-            return None
+            raise SolarCalculationError(f"Error getting peak elevation time: {str(e)}")
 
     def get_next_solar_noon(self, start_dt: datetime) -> Optional[datetime]:
         """Get the next solar noon after the given datetime."""
         try:
             if start_dt.tzinfo is None:
-                raise ValueError("date_time must be timezone-aware")
+                raise TimezoneError("date_time must be timezone-aware")
             event_time = self._get_solar_event(start_dt, "next", "transit")
             return event_time
+        except TimezoneError:
+            raise
         except Exception as e:
-            _LOGGER.error("Error getting next solar noon: %s", e)
-            return None
+            raise SolarCalculationError(f"Error getting next solar noon: {str(e)}")
 
     def get_next_solar_midnight(self, start_dt: datetime) -> Optional[datetime]:
         """Get the next solar midnight after the given datetime."""
         try:
             if start_dt.tzinfo is None:
-                raise ValueError("date_time must be timezone-aware")
+                raise TimezoneError("date_time must be timezone-aware")
             event_time = self._get_solar_event(start_dt, "next", "antitransit")
             return event_time
+        except TimezoneError:
+            raise
         except Exception as e:
-            _LOGGER.error("Error getting next solar midnight: %s", e)
-            return None
+            raise SolarCalculationError(f"Error getting next solar midnight: {str(e)}")
 
     def get_previous_solar_noon(self, start_dt: datetime) -> Optional[datetime]:
         """Get the previous solar noon before the given datetime."""
         try:
             if start_dt.tzinfo is None:
-                raise ValueError("date_time must be timezone-aware")
+                raise TimezoneError("date_time must be timezone-aware")
             event_time = self._get_solar_event(start_dt, "previous", "transit")
             return event_time
+        except TimezoneError:
+            raise
         except Exception as e:
-            _LOGGER.error("Error getting previous solar noon: %s", e)
-            return None
+            raise SolarCalculationError(f"Error getting previous solar noon: {str(e)}")
 
     def get_previous_solar_midnight(self, start_dt: datetime) -> Optional[datetime]:
         """Get the previous solar midnight before the given datetime."""
         try:
             if start_dt.tzinfo is None:
-                raise ValueError("date_time must be timezone-aware")
+                raise TimezoneError("date_time must be timezone-aware")
             event_time = self._get_solar_event(start_dt, "previous", "antitransit")
             return event_time
+        except TimezoneError:
+            raise
         except Exception as e:
-            _LOGGER.error("Error getting previous solar midnight: %s", e)
-            return None
+            raise SolarCalculationError(f"Error getting previous solar midnight: {str(e)}")
 
-    def _get_solar_event(self, dt: datetime, direction: str, event_type: str) -> datetime:
-        """Get solar event time using ephem.
+    def _get_solar_event(
+        self,
+        dt: datetime,
+        direction: Literal["next", "previous"],
+        event_type: Literal["transit", "antitransit"]
+    ) -> Optional[datetime]:
+        """Calculate solar event time.
         
         Args:
             dt: A timezone-aware datetime object
@@ -183,18 +204,19 @@ class SunHelper:
             event_type: Either 'transit' or 'antitransit'
             
         Returns:
-            The calculated solar event time, or a fallback time if calculation fails
+            The calculated solar event time, or None if calculation fails
             
         Raises:
-            ValueError: If the datetime is not timezone-aware
+            TimezoneError: If the datetime is not timezone-aware
+            SolarCalculationError: If the calculation fails
         """
-        if dt.tzinfo is None:
-            raise ValueError("date_time must be timezone-aware")
-            
-        dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
-        observer = self._setup_observer(dt_utc)
-        
         try:
+            if dt.tzinfo is None:
+                raise TimezoneError("date_time must be timezone-aware")
+            
+            dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            observer = self._setup_observer(dt_utc)
+            
             if event_type == "transit":
                 if direction == "previous":
                     event_time = observer.previous_transit(self._sun)
@@ -206,15 +228,14 @@ class SunHelper:
                 else:  # next
                     event_time = observer.next_antitransit(self._sun)
                     
-            return event_time.datetime().replace(tzinfo=timezone.utc)
+            if event_time is not None:
+                return event_time.datetime().replace(tzinfo=timezone.utc)
+            return None
+            
+        except TimezoneError:
+            raise
         except Exception as e:
-            _LOGGER.debug("Error calculating solar %s %s: %s", direction, event_type, e)
-            # Fallback to approximate calculation
-            hours = 12 if event_type == "transit" else 0
-            days_offset = -1 if direction == "previous" else 1
-            approx = dt_utc.replace(hour=hours, minute=0, second=0, microsecond=0)
-            approx += timedelta(days=days_offset)
-            return approx.replace(tzinfo=timezone.utc)
+            raise SolarCalculationError(f"Error calculating solar event: {str(e)}")
 
     def get_peak_elevation_time(self, dt: datetime) -> datetime:
         """Get the time when the sun reaches its maximum elevation for the day (solar noon)."""
@@ -329,13 +350,17 @@ class SunHelper:
             
         Returns:
             'rising' or 'setting'
+            
+        Raises:
+            TimezoneError: If the datetime is not timezone-aware
+            DirectionError: If direction calculation fails
         """
         try:
             # Ensure datetime is timezone-aware
             if cur_dttm is None:
                 cur_dttm = datetime.now(timezone.utc)
             elif cur_dttm.tzinfo is None:
-                raise ValueError("date_time must be timezone-aware")
+                raise TimezoneError("date_time must be timezone-aware")
             
             # Get timezone from input datetime
             tz = cur_dttm.tzinfo
@@ -351,17 +376,16 @@ class SunHelper:
                 start = datetime.combine(date, time(0, 0)).replace(tzinfo=tz)
                 end = start + ONE_DAY
                 
+                event: Optional[datetime] = None
                 if event_type == "solar_noon":
                     event = self.get_next_solar_noon(start)
                     if event is not None and event >= end:
                         event = self.get_previous_solar_noon(start)
-                    return event
                 elif event_type == "solar_midnight":
                     event = self.get_next_solar_midnight(start)
                     if event is not None and event >= end:
                         event = self.get_previous_solar_midnight(start)
-                    return event
-                return None
+                return event
                 
             # Get solar events
             hi_dttm = get_solar_event(cur_date, "solar_noon")
@@ -369,7 +393,7 @@ class SunHelper:
             nxt_noon = get_solar_event(cur_date + ONE_DAY, "solar_noon")
     
             # If we can't get solar events, use elevation trend
-            if hi_dttm is None or lo_dttm is None or nxt_noon is None:
+            if None in (hi_dttm, lo_dttm, nxt_noon):
                 _LOGGER.debug("Missing solar events, using elevation trend")
                 return self._get_direction_from_elevation_trend(cur_dttm)
     
@@ -377,10 +401,10 @@ class SunHelper:
             tl_dttm: Optional[datetime] = None
             tr_dttm: Optional[datetime] = None
             
-            if cur_dttm < lo_dttm:
+            if lo_dttm is not None and cur_dttm < lo_dttm:
                 tl_dttm = get_solar_event(cur_date - ONE_DAY, "solar_noon")
                 tr_dttm = lo_dttm
-            elif cur_dttm < hi_dttm:
+            elif hi_dttm is not None and cur_dttm < hi_dttm:
                 tl_dttm = lo_dttm
                 tr_dttm = hi_dttm
             else:
@@ -418,9 +442,10 @@ class SunHelper:
                 
             return result
             
+        except TimezoneError:
+            raise
         except Exception as e:
-            _LOGGER.warning("Error in sun_direction: %s. Using elevation trend.", e)
-            return self._get_direction_from_elevation_trend(cur_dttm)
+            raise DirectionError(f"Error determining sun direction: {str(e)}")
 
     def _get_direction_from_elevation_trend(self, cur_dttm: Optional[datetime] = None) -> str:
         """Determine sun direction by comparing current elevation with future elevation.
@@ -431,33 +456,49 @@ class SunHelper:
         Returns:
             'rising' or 'setting'
         """
-        if cur_dttm is None:
-            cur_dttm = datetime.now(timezone.utc)
-        elif cur_dttm.tzinfo is None:
-            raise ValueError("date_time must be timezone-aware")
+        try:
+            if cur_dttm is None:
+                cur_dttm = datetime.now(timezone.utc)
+            elif cur_dttm.tzinfo is None:
+                raise TimezoneError("date_time must be timezone-aware")
             
-        future = cur_dttm + timedelta(minutes=15)
-        future_elev = self.calculate_position(future)[0]
-        current_elev = self.calculate_position(cur_dttm)[0]
-        direction = "rising" if future_elev > current_elev else "setting"
-        _LOGGER.debug("Direction from elevation trend: %s (%.2f° -> %.2f°)", 
-                     direction, current_elev, future_elev)
-        return direction
+            future = cur_dttm + timedelta(minutes=15)
+            future_elev = self.calculate_position(future)[0]
+            current_elev = self.calculate_position(cur_dttm)[0]
+            direction = "rising" if future_elev > current_elev else "setting"
+            _LOGGER.debug("Direction from elevation trend: %s (%.2f° -> %.2f°)", 
+                         direction, current_elev, future_elev)
+            return direction
+            
+        except TimezoneError:
+            raise
+        except Exception as e:
+            raise DirectionError(f"Error calculating direction from elevation trend: {str(e)}")
 
-    def _get_sun_direction_with_fallback(self, now: Optional[datetime]) -> Optional[str]:
-        """Get sun direction. Fallback is now handled within sun_direction."""
+    def _get_sun_direction_with_fallback(self, now: Optional[datetime] = None) -> str:
+        """Get sun direction with fallback to elevation trend.
+        
+        Args:
+            now: A timezone-aware datetime object, or None to use current UTC time
+            
+        Returns:
+            'rising' or 'setting'
+            
+        Raises:
+            TimezoneError: If the datetime is not timezone-aware
+            DirectionError: If direction calculation fails
+        """
         try:
             if now is None:
                 now = datetime.now(timezone.utc)
             elif now.tzinfo is None:
-                raise ValueError("date_time must be timezone-aware")
+                raise TimezoneError("date_time must be timezone-aware")
                 
             direction = self.sun_direction(now)
             _LOGGER.debug("Sun direction determined: %s", direction)
             return direction
         except Exception as e:
-            _LOGGER.error("Error getting sun direction: %s", e)
-            return None
+            raise DirectionError(f"Error getting sun direction: {str(e)}")
 
 class BaseSolEntity:
     """Base class for Sol entities."""
