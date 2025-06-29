@@ -1,16 +1,16 @@
-# helper.py
-import math
-import ephem
+"""Helper module for Sol integration."""
 from datetime import datetime, timezone, timedelta, time
-from typing import Optional, Literal, Tuple, Union, cast, overload
+from typing import Optional, Literal, Tuple, Union, cast, overload, Any
+import ephem  # type: ignore
 import logging
+import math
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import slugify
 import homeassistant.util.dt as dt_util
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from .const import DOMAIN, NAME, TEST_VERSION
-from .exceptions import (
+from custom_components.sol.const import DOMAIN, NAME, TEST_VERSION
+from custom_components.sol.exceptions import (
     SolError, DateTimeError, TimezoneError, SolarCalculationError,
     DirectionError, ElevationError, AzimuthError, SolsticeError
 )
@@ -38,9 +38,9 @@ class SunHelper:
         self.search_increment = timedelta(hours=1)
         
         # Cache the sun object for reuse
-        self._sun = ephem.Sun()
+        self._sun = ephem.Sun()  # type: ignore
 
-    def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:
+    def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:  # type: ignore
         """Set up ephem observer with current location and time.
         
         Args:
@@ -58,7 +58,7 @@ class SunHelper:
         elif date_time.tzinfo is None:
             raise TimezoneError("date_time must be timezone-aware")
             
-        observer = ephem.Observer()
+        observer = ephem.Observer()  # type: ignore
         observer.lat = str(self.latitude)
         observer.lon = str(self.longitude)
         observer.elevation = self.elevation
@@ -69,67 +69,58 @@ class SunHelper:
         return observer
 
     # === POSITION CALCULATION ===
-    def calculate_position(self, date_time: Optional[datetime] = None) -> tuple[float, float]:
-        """Calculate current sun elevation and azimuth (degrees).
+    def calculate_position(self, dt: datetime) -> Tuple[float, float]:
+        """Calculate sun's elevation and azimuth at the given datetime.
         
         Args:
-            date_time: Optional timezone-aware datetime. If None, current UTC time will be used.
+            dt: A timezone-aware datetime object
             
         Returns:
-            Tuple of (elevation, azimuth) in degrees
+            A tuple of (elevation, azimuth) in degrees
             
         Raises:
             TimezoneError: If the datetime is not timezone-aware
-            ElevationError: If elevation calculation fails
-            AzimuthError: If azimuth calculation fails
+            SolarCalculationError: If the calculation fails
         """
-        # Ensure we have a timezone-aware datetime
-        if date_time is None:
-            date_time = datetime.now(timezone.utc)
-        elif date_time.tzinfo is None:
-            raise TimezoneError("date_time must be timezone-aware")
-        
         try:
-            observer = self._setup_observer(date_time)
+            if dt.tzinfo is None:
+                raise TimezoneError("date_time must be timezone-aware")
             
+            # Convert to UTC for calculations
+            dt_utc = dt.astimezone(timezone.utc)
+            
+            # Set up observer
+            observer = self._setup_observer(dt_utc)
+            
+            # Calculate sun's position
             self._sun.compute(observer)
             
+            # Convert to degrees and normalize
             elevation = math.degrees(self._sun.alt)
             azimuth = math.degrees(self._sun.az)
             
-            # Normalize -0.0 to 0.0 to avoid displaying negative zero
-            if abs(elevation) < 1e-10:  # Very small values near zero
-                elevation = 0.0
-            if abs(azimuth) < 1e-10:  # Very small values near zero
-                azimuth = 0.0
-            
-            # Validate results
-            if not (-90 <= elevation <= 90):
-                raise ElevationError(f"Calculated elevation {elevation}° is outside valid range [-90, 90]")
-            
-            # Azimuth should be 0-360°, but 360° is equivalent to 0°
-            if azimuth < 0:
-                _LOGGER.warning("Calculated azimuth %.2f° is negative, normalizing", azimuth)
-                azimuth = azimuth % 360
-            elif azimuth >= 360:
-                azimuth = 0.0
-            
+            _LOGGER.debug("Sun position at %s: %.2f°, %.2f°", dt, elevation, azimuth)
             return elevation, azimuth
             
         except TimezoneError:
-            raise
-        except ElevationError:
             raise
         except Exception as e:
             raise SolarCalculationError(f"Error calculating sun position: {str(e)}")
 
     # === SOLAR EVENT CALCULATIONS ===
-    @overload
     def get_peak_elevation_time(self, start_dt: datetime) -> Optional[datetime]:
-        ...
-
-    def get_peak_elevation_time(self, start_dt: datetime) -> Optional[datetime]:
-        """Get the time of peak elevation (solar noon) after the given datetime."""
+        """Get the time of peak elevation (solar noon) after the given datetime.
+        
+        Args:
+            start_dt: A timezone-aware datetime object
+            
+        Returns:
+            The time of peak elevation, or None if it cannot be determined
+            
+        Raises:
+            TimezoneError: If the datetime is not timezone-aware
+            SolarCalculationError: If the calculation fails
+        """
         try:
             if start_dt.tzinfo is None:
                 raise TimezoneError("date_time must be timezone-aware")
@@ -214,7 +205,7 @@ class SunHelper:
             if dt.tzinfo is None:
                 raise TimezoneError("date_time must be timezone-aware")
             
-            dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            dt_utc = dt.astimezone(timezone.utc)
             observer = self._setup_observer(dt_utc)
             
             if event_type == "transit":
@@ -237,111 +228,6 @@ class SunHelper:
         except Exception as e:
             raise SolarCalculationError(f"Error calculating solar event: {str(e)}")
 
-    def get_peak_elevation_time(self, dt: datetime) -> datetime:
-        """Get the time when the sun reaches its maximum elevation for the day (solar noon)."""
-        try:
-            # Use solar noon as the peak elevation time
-            # This is more accurate than trying to calculate the exact peak
-            peak_time = self.get_next_solar_noon(dt)
-            
-            # If the next solar noon is too far in the future, use the previous one
-            if peak_time > dt + timedelta(days=1):
-                peak_time = self.get_previous_solar_noon(dt)
-            
-            _LOGGER.debug("Peak elevation time (solar noon): %s", peak_time)
-            return peak_time
-            
-        except Exception as e:
-            _LOGGER.error("Error calculating peak elevation time: %s", e)
-            # Fallback to approximate solar noon
-            dt_utc = dt.astimezone(timezone.utc).replace(tzinfo=None)
-            approx_noon = dt_utc.replace(hour=12, minute=0, second=0, microsecond=0)
-            return approx_noon.replace(tzinfo=timezone.utc)
-
-    # === ELEVATION TIMING ===
-    def get_time_at_elevation(
-        self,
-        start_dt: datetime,
-        target_elev: float,
-        direction: Literal['rising', 'setting'],
-        max_days: int = 0,
-        use_center: bool = True
-    ) -> Optional[datetime]:
-        """Find the next time the sun reaches target elevation in the given direction.
-        
-        Args:
-            start_dt: The datetime to start searching from
-            target_elev: The target elevation in degrees
-            direction: Whether to look for 'rising' or 'setting' crossing of target
-            max_days: Maximum days to search forward (0 for current day only)
-            use_center: Whether to use sun's center (True) or upper limb (False)
-        """
-        if target_elev is None:
-            _LOGGER.error("Target elevation cannot be None for direction '%s'", direction)
-            return None
-            
-        if direction not in ('rising', 'setting'):
-            raise ValueError("Direction must be 'rising' or 'setting'")
-        
-        # Convert to UTC for calculations
-        start_dt_utc = start_dt.astimezone(timezone.utc)
-        current_date = start_dt_utc
-        
-        # Determine end time based on max_days
-        if max_days > 0:
-            end_date = start_dt_utc + timedelta(days=max_days)
-        else:
-            # If max_days is 0, search until end of the current day in local time
-            local_date = start_dt_utc.astimezone(start_dt.tzinfo).date()
-            end_local = datetime.combine(local_date, time(23, 59, 59, 999999))
-            end_date = end_local.astimezone(timezone.utc)
-        
-        _LOGGER.debug(
-            "Searching for elevation %.2f° %s between %s and %s",
-            target_elev, direction, current_date, end_date
-        )
-        
-        # Track the last elevation to detect crossings
-        last_elev = None
-        
-        while current_date <= end_date:
-            try:
-                # Calculate current elevation
-                current_elev, _ = self.calculate_position(current_date)
-                
-                if last_elev is not None:
-                    # Check if we've crossed the target elevation
-                    if direction == 'rising' and last_elev <= target_elev < current_elev:
-                        # Found rising crossing
-                        _LOGGER.debug(
-                            "Found rising crossing at %s (%.2f° -> %.2f°)",
-                            current_date, last_elev, current_elev
-                        )
-                        return current_date
-                    elif direction == 'setting' and last_elev >= target_elev > current_elev:
-                        # Found setting crossing
-                        _LOGGER.debug(
-                            "Found setting crossing at %s (%.2f° -> %.2f°)",
-                            current_date, last_elev, current_elev
-                        )
-                        return current_date
-                
-                last_elev = current_elev
-                current_date += self.search_increment
-                
-            except Exception as e:
-                _LOGGER.error(
-                    "Error calculating elevation at %s: %s",
-                    current_date, e
-                )
-                current_date += self.search_increment
-        
-        _LOGGER.debug(
-            "No %s crossing of %.2f° found between %s and %s",
-            direction, target_elev, start_dt_utc, end_date
-        )
-        return None
-
     def sun_direction(self, cur_dttm: Optional[datetime] = None) -> str:
         """Determine if the sun is rising at the given datetime.
         
@@ -357,17 +243,16 @@ class SunHelper:
         """
         try:
             # Ensure datetime is timezone-aware
-            if cur_dttm is None:
-                cur_dttm = datetime.now(timezone.utc)
-            elif cur_dttm.tzinfo is None:
+            current_time = datetime.now(timezone.utc) if cur_dttm is None else cur_dttm
+            if current_time.tzinfo is None:
                 raise TimezoneError("date_time must be timezone-aware")
             
             # Get timezone from input datetime
-            tz = cur_dttm.tzinfo
+            tz = current_time.tzinfo
             ONE_DAY = timedelta(days=1)
             
             # Get current date in the input datetime's timezone
-            cur_date = cur_dttm.astimezone(tz).date()
+            cur_date = current_time.astimezone(tz).date()
         
             # Helper function to get solar events
             def get_solar_event(date, event_type) -> Optional[datetime]:
@@ -395,25 +280,25 @@ class SunHelper:
             # If we can't get solar events, use elevation trend
             if None in (hi_dttm, lo_dttm, nxt_noon):
                 _LOGGER.debug("Missing solar events, using elevation trend")
-                return self._get_direction_from_elevation_trend(cur_dttm)
+                return self._get_direction_from_elevation_trend(current_time)
     
             # Determine bracketing events
             tl_dttm: Optional[datetime] = None
             tr_dttm: Optional[datetime] = None
             
-            if lo_dttm is not None and cur_dttm < lo_dttm:
+            if lo_dttm is not None and current_time < lo_dttm:
                 tl_dttm = get_solar_event(cur_date - ONE_DAY, "solar_noon")
                 tr_dttm = lo_dttm
-            elif hi_dttm is not None and cur_dttm < hi_dttm:
+            elif hi_dttm is not None and current_time < hi_dttm:
                 tl_dttm = lo_dttm
                 tr_dttm = hi_dttm
             else:
                 lo_dttm_next = get_solar_event(cur_date + ONE_DAY, "solar_midnight")
                 if lo_dttm_next is None:
                     _LOGGER.debug("Missing next solar midnight, using elevation trend")
-                    return self._get_direction_from_elevation_trend(cur_dttm)
+                    return self._get_direction_from_elevation_trend(current_time)
                     
-                if cur_dttm < lo_dttm_next:
+                if current_time < lo_dttm_next:
                     tl_dttm = hi_dttm
                     tr_dttm = lo_dttm_next
                 else:
@@ -423,11 +308,13 @@ class SunHelper:
             # If we couldn't get bracketing events, use elevation trend
             if tl_dttm is None or tr_dttm is None:
                 _LOGGER.debug("No bracketing events found, using elevation trend")
-                return self._get_direction_from_elevation_trend(cur_dttm)
+                return self._get_direction_from_elevation_trend(current_time)
             
             # Get elevations at bracketing points
-            tl_elev = self.calculate_position(tl_dttm)[0]  # elevation is first value
-            tr_elev = self.calculate_position(tr_dttm)[0]
+            tl_dttm_safe = cast(datetime, tl_dttm)
+            tr_dttm_safe = cast(datetime, tr_dttm)
+            tl_elev = self.calculate_position(tl_dttm_safe)[0]  # elevation is first value
+            tr_elev = self.calculate_position(tr_dttm_safe)[0]
             
             # Final validation before return
             if tr_elev > tl_elev:
@@ -438,7 +325,7 @@ class SunHelper:
             # Validate result before returning
             if result not in ["rising", "setting"]:
                 _LOGGER.debug("Invalid direction result, using elevation trend")
-                return self._get_direction_from_elevation_trend(cur_dttm)
+                return self._get_direction_from_elevation_trend(current_time)
                 
             return result
             
@@ -457,14 +344,13 @@ class SunHelper:
             'rising' or 'setting'
         """
         try:
-            if cur_dttm is None:
-                cur_dttm = datetime.now(timezone.utc)
-            elif cur_dttm.tzinfo is None:
+            current_time = datetime.now(timezone.utc) if cur_dttm is None else cur_dttm
+            if current_time.tzinfo is None:
                 raise TimezoneError("date_time must be timezone-aware")
             
-            future = cur_dttm + timedelta(minutes=15)
+            future = current_time + timedelta(minutes=15)
             future_elev = self.calculate_position(future)[0]
-            current_elev = self.calculate_position(cur_dttm)[0]
+            current_elev = self.calculate_position(current_time)[0]
             direction = "rising" if future_elev > current_elev else "setting"
             _LOGGER.debug("Direction from elevation trend: %s (%.2f° -> %.2f°)", 
                          direction, current_elev, future_elev)
@@ -489,16 +375,94 @@ class SunHelper:
             DirectionError: If direction calculation fails
         """
         try:
-            if now is None:
-                now = datetime.now(timezone.utc)
-            elif now.tzinfo is None:
+            current_time = datetime.now(timezone.utc) if now is None else now
+            if current_time.tzinfo is None:
                 raise TimezoneError("date_time must be timezone-aware")
                 
-            direction = self.sun_direction(now)
+            direction = self.sun_direction(current_time)
             _LOGGER.debug("Sun direction determined: %s", direction)
             return direction
         except Exception as e:
             raise DirectionError(f"Error getting sun direction: {str(e)}")
+
+    def get_time_at_elevation(
+        self,
+        start_dt: datetime,
+        target_elev: float,
+        direction: Literal['rising', 'setting'],
+        max_days: int = 0,
+        use_center: bool = True
+    ) -> Optional[datetime]:
+        """Find the next time the sun reaches target elevation in the given direction.
+        
+        Args:
+            start_dt: The datetime to start searching from
+            target_elev: The target elevation in degrees
+            direction: Whether to look for 'rising' or 'setting' crossing of target
+            max_days: Maximum days to search forward (0 for current day only)
+            use_center: Whether to use sun's center (True) or upper limb (False)
+            
+        Returns:
+            The datetime when the sun reaches the target elevation, or None if not found
+            
+        Raises:
+            ValueError: If direction is not 'rising' or 'setting'
+            TimezoneError: If the datetime is not timezone-aware
+            SolarCalculationError: If the calculation fails
+        """
+        try:
+            if start_dt.tzinfo is None:
+                raise TimezoneError("date_time must be timezone-aware")
+            
+            if direction not in ['rising', 'setting']:
+                raise ValueError("direction must be 'rising' or 'setting'")
+            
+            # Convert to UTC for calculations
+            start_dt_utc = start_dt.astimezone(timezone.utc)
+            
+            # Get initial elevation
+            elev, _ = self.calculate_position(start_dt_utc)
+            
+            # Determine search direction based on current elevation and target
+            if direction == 'rising':
+                if elev > target_elev:
+                    # Sun is already above target, wait for next rising
+                    start_dt_utc = start_dt_utc + timedelta(days=1)
+                    start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            else:  # setting
+                if elev < target_elev:
+                    # Sun is already below target, wait for next day
+                    start_dt_utc = start_dt_utc + timedelta(days=1)
+                    start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Search for crossing time
+            test_dt = start_dt_utc
+            end_dt = start_dt_utc + timedelta(days=max_days if max_days > 0 else 1)
+            
+            prev_elev = None
+            while test_dt <= end_dt:
+                elev, _ = self.calculate_position(test_dt)
+                
+                if prev_elev is not None:
+                    # Check if we've crossed the target elevation
+                    if direction == 'rising':
+                        if prev_elev <= target_elev and elev >= target_elev:
+                            # Found rising crossing
+                            return test_dt
+                    else:  # setting
+                        if prev_elev >= target_elev and elev <= target_elev:
+                            # Found setting crossing
+                            return test_dt
+                
+                prev_elev = elev
+                test_dt = test_dt + timedelta(minutes=1)
+            
+            return None
+            
+        except TimezoneError:
+            raise
+        except Exception as e:
+            raise SolarCalculationError(f"Error calculating elevation at {start_dt}: {str(e)}")
 
 class BaseSolEntity:
     """Base class for Sol entities."""

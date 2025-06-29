@@ -17,7 +17,7 @@ from helper import SunHelper
 def test_binary_sensor_timing():
     """Test if the binary sensor timing is precise enough."""
     
-    print("=== Testing Binary Sensor Timing Precision ===\n")
+    print("=== Testing Binary Sensor Precision ===\n")
     
     # Test parameters
     latitude = 40.7128  # New York
@@ -34,12 +34,12 @@ def test_binary_sensor_timing():
     sun_helper = SunHelper(latitude, longitude, elevation, pressure, temperature)
     
     # Test around a specific time when the sun should be crossing a threshold
-    test_time = datetime.now(timezone.utc).replace(hour=10, minute=0, second=0, microsecond=0)
+    test_time = datetime(2025, 6, 29, 10, 0, 0, tzinfo=timezone.utc)
     
     print(f"Test time: {test_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     
     # Get the scheduled update time for the rising threshold
-    today_start = test_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = test_time.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
     
     scheduled_rise = sun_helper.get_time_at_elevation(
         start_dt=today_start,
@@ -118,7 +118,7 @@ def test_state_transition_scenario():
     
     # Simulate a scenario where the sun is setting and should turn OFF
     # Start with sun above setting threshold
-    start_time = datetime.now(timezone.utc).replace(hour=18, minute=0, second=0, microsecond=0)
+    start_time = datetime(2025, 6, 29, 18, 0, 0, tzinfo=timezone.utc)
     
     print("Simulating setting scenario:")
     print(f"Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
