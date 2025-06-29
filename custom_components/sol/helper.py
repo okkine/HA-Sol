@@ -120,7 +120,12 @@ class SunHelper:
     def get_peak_elevation_time(self, start_dt: datetime) -> Optional[datetime]:
         """Get the time of peak elevation (solar noon) after the given datetime."""
         try:
-            return self.get_next_solar_noon(start_dt)
+            if start_dt.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
+            event_time = self.get_next_solar_noon(start_dt)
+            if event_time is None:
+                _LOGGER.debug("No peak elevation time found")
+            return event_time
         except Exception as e:
             _LOGGER.error("Error getting peak elevation time: %s", e)
             return None
@@ -128,7 +133,10 @@ class SunHelper:
     def get_next_solar_noon(self, start_dt: datetime) -> Optional[datetime]:
         """Get the next solar noon after the given datetime."""
         try:
-            return self._get_solar_event(start_dt, "next", "transit")
+            if start_dt.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
+            event_time = self._get_solar_event(start_dt, "next", "transit")
+            return event_time
         except Exception as e:
             _LOGGER.error("Error getting next solar noon: %s", e)
             return None
@@ -136,7 +144,10 @@ class SunHelper:
     def get_next_solar_midnight(self, start_dt: datetime) -> Optional[datetime]:
         """Get the next solar midnight after the given datetime."""
         try:
-            return self._get_solar_event(start_dt, "next", "antitransit")
+            if start_dt.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
+            event_time = self._get_solar_event(start_dt, "next", "antitransit")
+            return event_time
         except Exception as e:
             _LOGGER.error("Error getting next solar midnight: %s", e)
             return None
@@ -144,7 +155,10 @@ class SunHelper:
     def get_previous_solar_noon(self, start_dt: datetime) -> Optional[datetime]:
         """Get the previous solar noon before the given datetime."""
         try:
-            return self._get_solar_event(start_dt, "previous", "transit")
+            if start_dt.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
+            event_time = self._get_solar_event(start_dt, "previous", "transit")
+            return event_time
         except Exception as e:
             _LOGGER.error("Error getting previous solar noon: %s", e)
             return None
@@ -152,13 +166,28 @@ class SunHelper:
     def get_previous_solar_midnight(self, start_dt: datetime) -> Optional[datetime]:
         """Get the previous solar midnight before the given datetime."""
         try:
-            return self._get_solar_event(start_dt, "previous", "antitransit")
+            if start_dt.tzinfo is None:
+                raise ValueError("date_time must be timezone-aware")
+            event_time = self._get_solar_event(start_dt, "previous", "antitransit")
+            return event_time
         except Exception as e:
             _LOGGER.error("Error getting previous solar midnight: %s", e)
             return None
 
-    def _get_solar_event(self, dt: datetime, direction: str, event_type: str) -> Optional[datetime]:
-        """Get solar event time using ephem."""
+    def _get_solar_event(self, dt: datetime, direction: str, event_type: str) -> datetime:
+        """Get solar event time using ephem.
+        
+        Args:
+            dt: A timezone-aware datetime object
+            direction: Either 'next' or 'previous'
+            event_type: Either 'transit' or 'antitransit'
+            
+        Returns:
+            The calculated solar event time, or a fallback time if calculation fails
+            
+        Raises:
+            ValueError: If the datetime is not timezone-aware
+        """
         if dt.tzinfo is None:
             raise ValueError("date_time must be timezone-aware")
             
@@ -316,7 +345,7 @@ class SunHelper:
             cur_date = cur_dttm.astimezone(tz).date()
         
             # Helper function to get solar events
-            def get_solar_event(date, event_type):
+            def get_solar_event(date, event_type) -> Optional[datetime]:
                 """Get solar event datetime for a given local date."""
                 # Create timezone-aware datetime at midnight
                 start = datetime.combine(date, time(0, 0)).replace(tzinfo=tz)
@@ -324,12 +353,12 @@ class SunHelper:
                 
                 if event_type == "solar_noon":
                     event = self.get_next_solar_noon(start)
-                    if event and event >= end:
+                    if event is not None and event >= end:
                         event = self.get_previous_solar_noon(start)
                     return event
                 elif event_type == "solar_midnight":
                     event = self.get_next_solar_midnight(start)
-                    if event and event >= end:
+                    if event is not None and event >= end:
                         event = self.get_previous_solar_midnight(start)
                     return event
                 return None
@@ -340,11 +369,14 @@ class SunHelper:
             nxt_noon = get_solar_event(cur_date + ONE_DAY, "solar_noon")
     
             # If we can't get solar events, use elevation trend
-            if not hi_dttm or not lo_dttm or not nxt_noon:
+            if hi_dttm is None or lo_dttm is None or nxt_noon is None:
                 _LOGGER.debug("Missing solar events, using elevation trend")
                 return self._get_direction_from_elevation_trend(cur_dttm)
     
             # Determine bracketing events
+            tl_dttm: Optional[datetime] = None
+            tr_dttm: Optional[datetime] = None
+            
             if cur_dttm < lo_dttm:
                 tl_dttm = get_solar_event(cur_date - ONE_DAY, "solar_noon")
                 tr_dttm = lo_dttm
@@ -353,7 +385,7 @@ class SunHelper:
                 tr_dttm = hi_dttm
             else:
                 lo_dttm_next = get_solar_event(cur_date + ONE_DAY, "solar_midnight")
-                if not lo_dttm_next:
+                if lo_dttm_next is None:
                     _LOGGER.debug("Missing next solar midnight, using elevation trend")
                     return self._get_direction_from_elevation_trend(cur_dttm)
                     
@@ -365,7 +397,7 @@ class SunHelper:
                     tr_dttm = nxt_noon
     
             # If we couldn't get bracketing events, use elevation trend
-            if not tl_dttm or not tr_dttm:
+            if tl_dttm is None or tr_dttm is None:
                 _LOGGER.debug("No bracketing events found, using elevation trend")
                 return self._get_direction_from_elevation_trend(cur_dttm)
             
@@ -501,18 +533,18 @@ class BaseSolEntity:
                 event_time = min(next_peak, next_midnight)
                 _LOGGER.debug("Using earlier solar event: %s (peak: %s, midnight: %s)", 
                              event_time, next_peak, next_midnight)
+                return event_time
             elif next_peak is not None:
-                event_time = next_peak
-                _LOGGER.debug("Using next peak elevation: %s", event_time)
+                _LOGGER.debug("Using next peak elevation: %s", next_peak)
+                return next_peak
             elif next_midnight is not None:
-                event_time = next_midnight
-                _LOGGER.debug("Using next solar midnight: %s", event_time)
+                _LOGGER.debug("Using next solar midnight: %s", next_midnight)
+                return next_midnight
             else:
                 # Emergency fallback
                 event_time = now + timedelta(minutes=5)
                 _LOGGER.warning("No solar events found, using emergency fallback: %s", event_time)
-                
-            return event_time
+                return event_time
             
         except Exception as e:
             _LOGGER.error("Error getting solar events for fallback: %s", e)
