@@ -77,7 +77,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             event_type_used = "current_time"
         
         # Calculate solstice curve at the determined calculation time
-        normalized, prev_solstice, next_solstice = calculator.get_normalized_curve(calculation_time)
+        normalized, prev_solstice, next_solstice = calculator.get_normalized_curve(date_time=calculation_time)
         
         # Update global storage
         SOLSTICE_CURVE_STORE['value'] = normalized
