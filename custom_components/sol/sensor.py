@@ -99,6 +99,7 @@ class SolElevationSensor(BaseSolSensor):
         )
         self._current_direction = None
         self._target_elevation = None
+        self._next_change = None
         
     @property
     def extra_state_attributes(self):
@@ -112,13 +113,14 @@ class SolElevationSensor(BaseSolSensor):
         }
 
     async def _async_update_logic(self, now):
-        now = now or dt_util.utcnow()
+        """Update sensor state and schedule next update."""
         _LOGGER.debug("Elevation sensor update triggered at %s", now)
         
         # Get current elevation and azimuth using shared method
         current_elev, current_azimuth = self._get_current_elevation(now, self._sun_helper)
         if current_elev is None:
-            return now + timedelta(minutes=5)
+            self._next_change = now + timedelta(minutes=5)
+            return self._next_change
         
         # Store raw values for debugging
         self._current_elevation_raw = current_elev
@@ -130,7 +132,7 @@ class SolElevationSensor(BaseSolSensor):
         # Get sun direction using shared method
         direction = self._get_sun_direction_with_fallback(now, self._sun_helper)
         
-        # STORE THE DIRECTION FOR STATE ATTRIBUTES
+        # Store the direction for state attributes
         self._current_direction = direction
 
         # Calculate next target elevation
@@ -164,7 +166,8 @@ class SolElevationSensor(BaseSolSensor):
                     )
                     # Update target elevation to the actual solar noon elevation
                     self._target_elevation = round(noon_elev, 2)
-                    return solar_noon
+                    self._next_change = solar_noon
+                    return self._next_change
         except Exception as e:
             _LOGGER.debug("Error checking solar noon elevation: %s", e)
         
@@ -185,7 +188,8 @@ class SolElevationSensor(BaseSolSensor):
                     )
                     # Update target elevation to the actual midnight elevation
                     self._target_elevation = round(midnight_elev, 2)
-                    return next_midnight
+                    self._next_change = next_midnight
+                    return self._next_change
         except Exception as e:
             _LOGGER.debug("Error checking midnight elevation: %s", e)
         
@@ -201,96 +205,13 @@ class SolElevationSensor(BaseSolSensor):
             max_days=1
         )
         
-        # Fallback to next solar event if needed
-        if not event_time:
-            _LOGGER.debug(
-                "No elevation event found for target %.2f° (direction: %s). "
-                "Current elevation: %.2f°. Using solar event fallback.",
-                next_target, direction, current_elev
-            )
-            
-            # Try to get next solar events (solar noon and midnight)
-            try:
-                solar_noon = self._sun_helper.get_next_solar_noon(now)
-                next_midnight = self._sun_helper.get_next_solar_midnight(now)
-                
-                # Smart selection based on current time and direction
-                if solar_noon and next_midnight:
-                    # If we're setting and near midnight, prefer midnight
-                    # If we're rising and near noon, prefer noon
-                    # Otherwise, choose the more appropriate event based on current time
-                    current_hour = now.hour
-                    
-                    if direction == "setting" and current_hour >= 18:  # Evening/night
-                        event_time = next_midnight
-                        # Update target elevation to midnight elevation
-                        midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
-                        self._target_elevation = round(midnight_elev, 2)
-                        _LOGGER.debug("Setting near midnight, using next solar midnight: %s", event_time)
-                    elif direction == "rising" and current_hour <= 6:  # Early morning
-                        event_time = solar_noon
-                        # Update target elevation to solar noon elevation
-                        noon_elev, _ = self._sun_helper.calculate_position(solar_noon)
-                        self._target_elevation = round(noon_elev, 2)
-                        _LOGGER.debug("Rising near dawn, using next solar noon: %s", event_time)
-                    else:
-                        # Choose the event that's closer in time but still in the right direction
-                        time_to_solar_noon = (solar_noon - now).total_seconds() if solar_noon > now else float('inf')
-                        time_to_midnight = (next_midnight - now).total_seconds() if next_midnight > now else float('inf')
-                        
-                        if time_to_midnight < time_to_solar_noon and direction == "setting":
-                            event_time = next_midnight
-                            # Update target elevation to midnight elevation
-                            midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
-                            self._target_elevation = round(midnight_elev, 2)
-                            _LOGGER.debug("Using closer solar midnight: %s", event_time)
-                        elif time_to_solar_noon < time_to_midnight and direction == "rising":
-                            event_time = solar_noon
-                            # Update target elevation to solar noon elevation
-                            noon_elev, _ = self._sun_helper.calculate_position(solar_noon)
-                            self._target_elevation = round(noon_elev, 2)
-                            _LOGGER.debug("Using closer solar noon: %s", event_time)
-                        else:
-                            # Fallback to the earlier event
-                            event_time = min(solar_noon, next_midnight)
-                            # Update target elevation based on which event we chose
-                            if event_time == solar_noon:
-                                noon_elev, _ = self._sun_helper.calculate_position(solar_noon)
-                                self._target_elevation = round(noon_elev, 2)
-                            else:
-                                midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
-                                self._target_elevation = round(midnight_elev, 2)
-                            _LOGGER.debug("Using earlier solar event: %s (solar noon: %s, midnight: %s)", 
-                                         event_time, solar_noon, next_midnight)
-                elif solar_noon:
-                    event_time = solar_noon
-                    # Update target elevation to solar noon elevation
-                    noon_elev, _ = self._sun_helper.calculate_position(solar_noon)
-                    self._target_elevation = round(noon_elev, 2)
-                    _LOGGER.debug("Using next solar noon: %s", event_time)
-                elif next_midnight:
-                    event_time = next_midnight
-                    # Update target elevation to midnight elevation
-                    midnight_elev, _ = self._sun_helper.calculate_position(next_midnight)
-                    self._target_elevation = round(midnight_elev, 2)
-                    _LOGGER.debug("Using next solar midnight: %s", event_time)
-                else:
-                    # Emergency fallback
-                    event_time = now + timedelta(minutes=5)
-                    _LOGGER.warning("No solar events found, using emergency fallback: %s", event_time)
-                    
-            except Exception as e:
-                _LOGGER.error("Error getting solar events for fallback: %s", e)
-                event_time = now + timedelta(minutes=5)
-                _LOGGER.debug("Using emergency fallback update at %s", event_time)
-        
-        _LOGGER.debug(
-            "Current: %.2f° (azimuth: %.2f°), Direction: %s, Target: %.2f°",
-            current_elev, current_azimuth, direction, self._target_elevation
-        )
-        
-        # Return next update time
-        return event_time
+        if event_time:
+            self._next_change = event_time
+            return self._next_change
+        else:
+            # If we can't find the next elevation change, schedule update in 5 minutes
+            self._next_change = now + timedelta(minutes=5)
+            return self._next_change
         
         
 class SolSolsticeCurveSensor(BaseSolSensor):

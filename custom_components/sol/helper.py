@@ -40,7 +40,7 @@ class SunHelper:
         # Cache the sun object for reuse
         self._sun = ephem.Sun()  # type: ignore
 
-    def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:  # type: ignore
+    def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:  # type: ignore[valid-type]
         """Set up ephem observer with current location and time.
         
         Args:
@@ -58,7 +58,7 @@ class SunHelper:
         elif date_time.tzinfo is None:
             raise TimezoneError("date_time must be timezone-aware")
             
-        observer = ephem.Observer()  # type: ignore
+        observer = ephem.Observer()  # type: ignore[attr-defined]
         observer.lat = str(self.latitude)
         observer.lon = str(self.longitude)
         observer.elevation = self.elevation
@@ -99,7 +99,9 @@ class SunHelper:
             elevation = math.degrees(self._sun.alt)
             azimuth = math.degrees(self._sun.az)
             
-            _LOGGER.debug("Sun position at %s: %.2f°, %.2f°", dt, elevation, azimuth)
+            # Only log every 15 minutes of simulation time to reduce spam
+            if dt.minute % 15 == 0:
+                _LOGGER.debug("Sun position at %s: %.2f°, %.2f°", dt, elevation, azimuth)
             return elevation, azimuth
             
         except TimezoneError:
@@ -580,70 +582,30 @@ class BaseSolEntity:
             raise
 
 class BaseSolSensor(BaseSolEntity, SensorEntity):
-    """Base class for Sol sensor entities."""
+    """Base class for Sol sensors."""
     
     async def async_update(self) -> None:
-        """Update the entity."""
-        try:
-            # Get current time in UTC
-            now = datetime.now(timezone.utc)
-            
-            # Create sun helper
-            sun_helper = SunHelper(
-                self.hass.config.latitude,  # type: ignore
-                self.hass.config.longitude,  # type: ignore
-                self.hass.config.elevation,  # type: ignore
-            )
-            
-            # Get current elevation and azimuth
-            self._elevation, self._azimuth = self._get_current_elevation(now, sun_helper)
-            
-            # Get sun direction
-            self._direction = self._get_sun_direction_with_fallback(now, sun_helper)
-            
-            # Get next solar events
-            self._next_change = self._get_solar_event_fallback(now, sun_helper)
-            
-            # Call subclass update logic
-            if hasattr(self, '_async_update_logic'):
-                self._next_change = await self._async_update_logic(now)
-            
-        except Exception as e:
-            _LOGGER.error("Error updating entity: %s", str(e))
-            raise
+        """Update the sensor."""
+        now = dt_util.utcnow()
+        if hasattr(self, '_async_update_logic'):
+            next_update = await self._async_update_logic(now)
+            if next_update is not None:  # Add type check
+                async_track_point_in_time(
+                    self.hass, self.async_update, next_update
+                )
 
 class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
-    """Base class for Sol binary sensor entities."""
+    """Base class for Sol binary sensors."""
     
     async def async_update(self) -> None:
-        """Update the entity."""
-        try:
-            # Get current time in UTC
-            now = datetime.now(timezone.utc)
-            
-            # Create sun helper
-            sun_helper = SunHelper(
-                self.hass.config.latitude,  # type: ignore
-                self.hass.config.longitude,  # type: ignore
-                self.hass.config.elevation,  # type: ignore
-            )
-            
-            # Get current elevation and azimuth
-            self._elevation, self._azimuth = self._get_current_elevation(now, sun_helper)
-            
-            # Get sun direction
-            self._direction = self._get_sun_direction_with_fallback(now, sun_helper)
-            
-            # Get next solar events
-            self._next_change = self._get_solar_event_fallback(now, sun_helper)
-            
-            # Call subclass update logic
-            if hasattr(self, '_async_update_logic'):
-                self._next_change = await self._async_update_logic(now)
-            
-        except Exception as e:
-            _LOGGER.error("Error updating entity: %s", str(e))
-            raise
+        """Update the binary sensor."""
+        now = dt_util.utcnow()
+        if hasattr(self, '_async_update_logic'):
+            next_update = await self._async_update_logic(now)
+            if next_update is not None:  # Add type check
+                async_track_point_in_time(
+                    self.hass, self.async_update, next_update
+                )
 
 class SolCalculateSolsticeCurve:
     """Calculate the normalized solstice transition curve (0-1) where 0=winter solstice, 1=summer solstice."""
@@ -657,7 +619,7 @@ class SolCalculateSolsticeCurve:
         self.temperature = temperature
         
         # Cache the sun object for reuse
-        self._sun = ephem.Sun()
+        self._sun = ephem.Sun()  # type: ignore[attr-defined]  # Add type ignore comment
 
     def _setup_observer(self, date_time: Optional[datetime] = None) -> ephem.Observer:
         """Create and configure an ephem observer with current settings."""
