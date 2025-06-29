@@ -6,7 +6,7 @@ NAME = "Sol"
 
 # Test variable to verify new updates are loaded
 # Update this value when making changes to verify the integration is using the latest code
-TEST_VERSION = "2025-06-29T11:15-0600-fix-sun-direction-timezone"
+TEST_VERSION = "2025-06-29T11:30-0600-refactor-sun-direction"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
