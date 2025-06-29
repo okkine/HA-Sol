@@ -616,7 +616,7 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
             if next_update is not None:
                 async_track_point_in_time(
                     self.hass, 
-                    lambda _: self.async_update(),
+                    lambda event: self.async_update(),
                     next_update
                 )
 
@@ -632,7 +632,7 @@ class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
             if next_update is not None:
                 async_track_point_in_time(
                     self.hass, 
-                    lambda _: self.async_update(),
+                    lambda event: self.async_update(),
                     next_update
                 )
 
