@@ -448,13 +448,16 @@ class SunHelper:
             
             # Set observer date using just the date part (ephem handles timezone conversion automatically)
             # Convert local date to UTC date - this automatically handles date boundary crossing
-            local_date = start_dt.date()  # Get just the date part
-            utc_date = start_dt.astimezone(timezone.utc).date()  # Convert to UTC date
+            local_date = start_dt.date()  # Get just the date part from the input datetime
+            # Convert the local date to UTC date by creating a datetime at midnight local and converting to UTC
+            local_tz = start_dt.tzinfo if start_dt.tzinfo else timezone.utc
+            local_midnight = datetime.combine(local_date, time.min, tzinfo=local_tz)
+            utc_date = local_midnight.astimezone(timezone.utc).date()
             observer.date = ephem.Date(utc_date)
             
             _LOGGER.debug(
-                "%s: Date conversion - start_dt=%s, local_date=%s, utc_date=%s, observer_date=%s",
-                caller, start_dt, local_date, utc_date, observer.date
+                "%s: Date conversion - start_dt=%s, local_date=%s, local_midnight=%s, utc_date=%s, observer_date=%s",
+                caller, start_dt, local_date, local_midnight, utc_date, observer.date
             )
             
             # Use ephem's built-in rise/set calculations
