@@ -274,15 +274,12 @@ class SunHelper:
             
         Returns:
             'rising' or 'setting'
-            
-        Raises:
-            ValueError: If the datetime is not timezone-aware
         """
         try:
             # Ensure datetime is timezone-aware
             if cur_dttm is None:
-                raise ValueError("date_time must not be None")
-            if cur_dttm.tzinfo is None:
+                cur_dttm = datetime.now(timezone.utc)
+            elif cur_dttm.tzinfo is None:
                 raise ValueError("date_time must be timezone-aware")
             
             # Get timezone from input datetime
@@ -335,13 +332,10 @@ class SunHelper:
             tl_elev = self.calculate_position(tl_dttm)[0]  # elevation is first value
             tr_elev = self.calculate_position(tr_dttm)[0]
             
-            # Add fallback at the end of the method
+            # If we couldn't get bracketing events, use elevation trend
             if not tl_dttm or not tr_dttm:
-                # Fallback to elevation trend method
-                future = cur_dttm + timedelta(minutes=15)
-                future_elev = self.calculate_position(future)[0]
-                current_elev = self.calculate_position(cur_dttm)[0]
-                return "rising" if future_elev > current_elev else "setting"
+                _LOGGER.debug("No bracketing events found, using elevation trend")
+                return self._get_direction_from_elevation_trend(cur_dttm)
             
             # Final validation before return
             if tr_elev > tl_elev:
@@ -351,20 +345,33 @@ class SunHelper:
                 
             # Validate result before returning
             if result not in ["rising", "setting"]:
-                raise ValueError(f"Invalid direction value: {result}")
+                _LOGGER.debug("Invalid direction result, using elevation trend")
+                return self._get_direction_from_elevation_trend(cur_dttm)
                 
             return result
             
         except Exception as e:
-            _LOGGER.warning("Error in sun_direction: %s. Using fallback method.", e)
-            # Fallback to elevation trend method
-            future = cur_dttm + timedelta(minutes=15)
-            future_elev = self.calculate_position(future)[0]
-            current_elev = self.calculate_position(cur_dttm)[0]
-            direction = "rising" if future_elev > current_elev else "setting"
-            _LOGGER.debug("Using fallback direction: %s (%.2f° -> %.2f°)", direction, current_elev, future_elev)
-            return direction
+            _LOGGER.warning("Error in sun_direction: %s. Using elevation trend.", e)
+            return self._get_direction_from_elevation_trend(cur_dttm)
 
+    def _get_direction_from_elevation_trend(self, cur_dttm: datetime) -> str:
+        """Determine sun direction by comparing current elevation with future elevation.
+        
+        This is a simpler but less accurate method used as a fallback.
+        """
+        future = cur_dttm + timedelta(minutes=15)
+        future_elev = self.calculate_position(future)[0]
+        current_elev = self.calculate_position(cur_dttm)[0]
+        direction = "rising" if future_elev > current_elev else "setting"
+        _LOGGER.debug("Direction from elevation trend: %s (%.2f° -> %.2f°)", 
+                     direction, current_elev, future_elev)
+        return direction
+
+    def _get_sun_direction_with_fallback(self, now, sun_helper):
+        """Get sun direction. Fallback is now handled within sun_direction."""
+        direction = sun_helper.sun_direction(now)
+        _LOGGER.debug("Sun direction determined: %s", direction)
+        return direction
 
 class BaseSolEntity:
     """Base class for Sol entities handling common scheduling and update logic."""
@@ -473,24 +480,6 @@ class BaseSolEntity:
         Should return the next update time or None if no scheduling needed.
         """
         raise NotImplementedError("Subclasses must implement this method")
-
-    def _get_sun_direction_with_fallback(self, now, sun_helper):
-        """Get sun direction with fallback to elevation trend method."""
-        try:
-            direction = sun_helper.sun_direction(now)
-            if direction not in ["rising", "setting"]:
-                raise ValueError(f"Invalid direction: {direction}")
-            _LOGGER.debug("Sun direction determined: %s", direction)
-            return direction
-        except Exception as e:
-            _LOGGER.warning("Error getting sun direction: %s. Using elevation trend", e)
-            # Fallback to elevation trend method - reuse current elevation if available
-            future = now + timedelta(minutes=5)
-            future_elev = sun_helper.calculate_position(future)[0]
-            current_elev = sun_helper.calculate_position(now)[0]
-            direction = "rising" if future_elev > current_elev else "setting"
-            _LOGGER.debug("Using fallback direction: %s (%.2f° -> %.2f°)", direction, current_elev, future_elev)
-            return direction
 
     def _get_current_elevation(self, now, sun_helper):
         """Get current elevation with error handling."""
