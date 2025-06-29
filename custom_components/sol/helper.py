@@ -426,16 +426,18 @@ class SunHelper:
             elev, _ = self.calculate_position(start_dt_utc)
             
             # Determine search direction based on current elevation and target
-            if direction == 'rising':
-                if elev > target_elev:
-                    # Sun is already above target, wait for next rising
-                    start_dt_utc = start_dt_utc + timedelta(days=1)
-                    start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-            else:  # setting
-                if elev < target_elev:
-                    # Sun is already below target, wait for next day
-                    start_dt_utc = start_dt_utc + timedelta(days=1)
-                    start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Only advance to next day if max_days > 0 (not when searching for today's events)
+            if max_days > 0:
+                if direction == 'rising':
+                    if elev > target_elev:
+                        # Sun is already above target, wait for next rising
+                        start_dt_utc = start_dt_utc + timedelta(days=1)
+                        start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+                else:  # setting
+                    if elev < target_elev:
+                        # Sun is already below target, wait for next day
+                        start_dt_utc = start_dt_utc + timedelta(days=1)
+                        start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
             
             # Search for crossing time
             test_dt = start_dt_utc
