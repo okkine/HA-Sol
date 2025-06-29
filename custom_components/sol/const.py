@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 17:46 - Fixed timezone handling to pass date-only to ephem observer"
+TEST_VERSION = "2025-06-29 17:58 - Removed old search logic that was causing yesterday dates to appear"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"

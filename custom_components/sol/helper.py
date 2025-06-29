@@ -432,20 +432,6 @@ class SunHelper:
             # Get initial elevation to determine if we need to advance to next day
             elev, _ = self.calculate_position(start_dt_utc, caller)
             
-            # Determine search direction based on current elevation and target
-            # Only advance to next day if max_days > 0 (not when searching for today's events)
-            if max_days > 0:
-                if direction == 'rising':
-                    if elev > target_elev:
-                        # Sun is already above target, wait for next rising
-                        start_dt_utc = start_dt_utc + timedelta(days=1)
-                        start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-                else:  # setting
-                    if elev < target_elev:
-                        # Sun is already below target, wait for next day
-                        start_dt_utc = start_dt_utc + timedelta(days=1)
-                        start_dt_utc = start_dt_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-            
             # Set observer date using just the date part (ephem handles timezone conversion automatically)
             # Convert local date to UTC date - this automatically handles date boundary crossing
             local_date = start_dt.date()  # Get just the date part from the input datetime
