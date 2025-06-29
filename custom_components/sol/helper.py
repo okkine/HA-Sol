@@ -5,7 +5,7 @@ import ephem  # type: ignore
 import logging
 import math
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.helpers.event import async_track_point_in_time, async_call_later
 from homeassistant.util import slugify
 import homeassistant.util.dt as dt_util
 from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -581,21 +581,38 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
             try:
                 next_update = await getattr(self, '_async_update_logic')(now)
                 if next_update is not None:
-                    _LOGGER.debug("%s: Scheduling next update at %s", self.name, next_update)
-                    async_track_point_in_time(
-                        self.hass, 
-                        lambda event: self.async_update(),
-                        next_update
-                    )
+                    # Calculate delay until next update
+                    delay_seconds = (next_update - now).total_seconds()
+                    if delay_seconds > 0:
+                        _LOGGER.debug("%s: Scheduling next update in %.1f seconds (at %s)", 
+                                    self.name, delay_seconds, next_update)
+                        async_call_later(
+                            self.hass, 
+                            delay_seconds,
+                            lambda _: self.async_update()
+                        )
+                    else:
+                        _LOGGER.warning("%s: Next update time is in the past, scheduling immediate update", self.name)
+                        async_call_later(
+                            self.hass,
+                            1,  # 1 second delay
+                            lambda _: self.async_update()
+                        )
                 else:
                     _LOGGER.warning("%s: No next update time returned from _async_update_logic", self.name)
+                    # Schedule retry in 5 minutes
+                    async_call_later(
+                        self.hass,
+                        300,  # 5 minutes
+                        lambda _: self.async_update()
+                    )
             except Exception as e:
                 _LOGGER.error("%s: Error in async_update: %s", self.name, e, exc_info=True)
                 # Schedule retry in 5 minutes
-                async_track_point_in_time(
+                async_call_later(
                     self.hass,
-                    lambda event: self.async_update(),
-                    dt_util.utcnow() + timedelta(minutes=5)
+                    300,  # 5 minutes
+                    lambda _: self.async_update()
                 )
 
 class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
@@ -609,21 +626,38 @@ class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
             try:
                 next_update = await getattr(self, '_async_update_logic')(now)
                 if next_update is not None:
-                    _LOGGER.debug("%s: Scheduling next update at %s", self.name, next_update)
-                    async_track_point_in_time(
-                        self.hass, 
-                        lambda event: self.async_update(),
-                        next_update
-                    )
+                    # Calculate delay until next update
+                    delay_seconds = (next_update - now).total_seconds()
+                    if delay_seconds > 0:
+                        _LOGGER.debug("%s: Scheduling next update in %.1f seconds (at %s)", 
+                                    self.name, delay_seconds, next_update)
+                        async_call_later(
+                            self.hass, 
+                            delay_seconds,
+                            lambda _: self.async_update()
+                        )
+                    else:
+                        _LOGGER.warning("%s: Next update time is in the past, scheduling immediate update", self.name)
+                        async_call_later(
+                            self.hass,
+                            1,  # 1 second delay
+                            lambda _: self.async_update()
+                        )
                 else:
                     _LOGGER.warning("%s: No next update time returned from _async_update_logic", self.name)
+                    # Schedule retry in 5 minutes
+                    async_call_later(
+                        self.hass,
+                        300,  # 5 minutes
+                        lambda _: self.async_update()
+                    )
             except Exception as e:
                 _LOGGER.error("%s: Error in async_update: %s", self.name, e, exc_info=True)
                 # Schedule retry in 5 minutes
-                async_track_point_in_time(
+                async_call_later(
                     self.hass,
-                    lambda event: self.async_update(),
-                    dt_util.utcnow() + timedelta(minutes=5)
+                    300,  # 5 minutes
+                    lambda _: self.async_update()
                 )
 
 class SolCalculateSolsticeCurve:
