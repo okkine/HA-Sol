@@ -573,6 +573,19 @@ class BaseSolEntity:
 class BaseSolSensor(BaseSolEntity, SensorEntity):
     """Base class for Sol sensors."""
     
+    async def async_added_to_hass(self) -> None:
+        """Run when entity about to be added to hass."""
+        await super().async_added_to_hass()
+        # Trigger the first update immediately
+        if self.hass is not None:
+            async_call_later(
+                self.hass,
+                1,  # 1 second delay to ensure everything is initialized
+                lambda _: self.async_update()
+            )
+        else:
+            _LOGGER.error("Entity %s not properly initialized - hass instance is None", self._attr_name)
+    
     async def async_update(self) -> None:
         """Update the sensor."""
         # Call child update logic and schedule next update
@@ -617,6 +630,19 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
 
 class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
     """Base class for Sol binary sensors."""
+    
+    async def async_added_to_hass(self) -> None:
+        """Run when entity about to be added to hass."""
+        await super().async_added_to_hass()
+        # Trigger the first update immediately
+        if self.hass is not None:
+            async_call_later(
+                self.hass,
+                1,  # 1 second delay to ensure everything is initialized
+                lambda _: self.async_update()
+            )
+        else:
+            _LOGGER.error("Entity %s not properly initialized - hass instance is None", self._attr_name)
     
     async def async_update(self) -> None:
         """Update the binary sensor."""

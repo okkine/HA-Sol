@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 15:14 - Changed to async_call_later for more reliable elevation sensor scheduling"
+TEST_VERSION = "2025-06-29 15:23 - Added async_added_to_hass to trigger first update immediately"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
