@@ -6,7 +6,7 @@ NAME = "Sol"
 
 # Test variable to verify new updates are loaded
 # Update this value when making changes to verify the integration is using the latest code
-TEST_VERSION = "2024-12-19T16:30Z-fix-solstice-init-timing"
+TEST_VERSION = "2024-12-19T16:45Z-fix-solstice-init-today-events"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
