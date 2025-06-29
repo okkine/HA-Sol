@@ -80,14 +80,7 @@ class SunHelper:
             if azimuth < 0:
                 _LOGGER.warning("Calculated azimuth %.2f° is negative, normalizing", azimuth)
                 azimuth = azimuth % 360
-            elif azimuth > 360 or abs(azimuth - 360.0) < 1e-6:
-                # Normalize values very close to 360° to 0°
-                if abs(azimuth - 360.0) < 1e-6:
-                    azimuth = 0.0
-                else:
-                    _LOGGER.warning("Calculated azimuth %.2f° is outside valid range [0, 360]", azimuth)
-                    azimuth = azimuth % 360
-            elif abs(azimuth - 0.0) < 1e-6:
+            elif azimuth >= 360:
                 azimuth = 0.0
             
             return elevation, azimuth
