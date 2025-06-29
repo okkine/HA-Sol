@@ -261,10 +261,10 @@ class SolElevationSensor(BaseSolSensor):
         # Search for event starting from current time
         # Type assertion is safe here since direction is guaranteed to be 'rising' or 'setting'
         event_time = self._sun_helper.get_time_at_elevation(
-            start_dt=now,
-            target_elev=next_target,
-            direction=direction,  # type: ignore[arg-type]
-            max_days=1
+            target_elevation=next_target,
+            start_time=now,
+            search_days=1,
+            caller=self.name
         )
         
         if event_time:
@@ -334,16 +334,16 @@ class SolSolsticeCurveSensor(BaseSolSensor):
             
             # Get today's sunrise and sunset times
             todays_sunrise = self._sun_helper.get_time_at_elevation(
-                start_dt=start_of_today_utc,
-                target_elev=0,
-                direction='rising',
-                max_days=0
+                target_elevation=0,
+                start_time=start_of_today_utc,
+                search_days=0,
+                caller=self.name
             )
             todays_sunset = self._sun_helper.get_time_at_elevation(
-                start_dt=start_of_today_utc,
-                target_elev=0,
-                direction='setting',
-                max_days=0
+                target_elevation=0,
+                start_time=start_of_today_utc,
+                search_days=0,
+                caller=self.name
             )
             
             # Use appropriate time based on whether it's before or after noon
