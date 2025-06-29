@@ -107,7 +107,8 @@ class SolElevationSensor(BaseSolSensor):
             "next_change": self.next_change,
             "direction": self._current_direction,
             "target_elevation": self._target_elevation,
-            "current_elevation_raw": getattr(self, '_current_elevation_raw', None)
+            "current_elevation_raw": getattr(self, '_current_elevation_raw', None),
+            "current_azimuth_raw": getattr(self, '_current_azimuth_raw', None)
         }
 
     async def _async_update_logic(self, now):
@@ -119,8 +120,9 @@ class SolElevationSensor(BaseSolSensor):
         if current_elev is None:
             return now + timedelta(minutes=5)
         
-        # Store raw elevation for debugging
+        # Store raw values for debugging
         self._current_elevation_raw = current_elev
+        self._current_azimuth_raw = current_azimuth
         
         # Update state values
         self._attr_native_value = round(current_elev, 2)
