@@ -473,7 +473,7 @@ class BaseSolEntity:
         """Initialize the entity."""
         self._name_suffix = name_suffix
         self._unique_id_suffix = unique_id_suffix
-        self._sun = ephem.Sun()  # type: ignore
+        self._sun = ephem.Sun()  # type: ignore[attr-defined]
         self._state: Optional[Union[float, bool]] = None
         self._next_change: Optional[datetime] = None
         self._next_rising: Optional[datetime] = None
@@ -485,18 +485,33 @@ class BaseSolEntity:
         self._direction: Optional[str] = None
         self._attr_should_poll = False
         self._attr_has_entity_name = True
-        self._attr_name = None  # Use device name
-        self._attr_unique_id = None  # Set by platform
+        self._attr_name = f"{NAME} {name_suffix}"
+        self._attr_unique_id = f"{DOMAIN}_{unique_id_suffix}"
+        self.hass = None  # Will be set by Home Assistant
+
+    @property
+    def name(self) -> str:
+        """Return the name of the entity."""
+        return self._attr_name
 
     @property
     def device_info(self):
         """Return device information."""
         return {
-            "identifiers": {(DOMAIN, f"{self._unique_id_suffix}")},
+            "identifiers": {(DOMAIN, self._unique_id_suffix)},
             "name": f"{NAME} {self._name_suffix}",
             "model": TEST_VERSION,
             "manufacturer": NAME,
         }
+
+    async def async_added_to_hass(self) -> None:
+        """Run when entity about to be added to hass."""
+        await super().async_added_to_hass()  # type: ignore[misc]
+        # Schedule first update
+        if self.hass is not None:
+            await self.async_update()
+        else:
+            _LOGGER.error("Entity %s not properly initialized - hass instance is None", self._attr_name)
 
     def _get_current_elevation(self, now: Optional[datetime], sun_helper: 'SunHelper') -> Tuple[Optional[float], Optional[float]]:
         """Get current elevation and azimuth."""
@@ -562,10 +577,14 @@ class BaseSolEntity:
             now = datetime.now(timezone.utc)
             
             # Create sun helper
+            if self.hass is None:
+                _LOGGER.error("Entity %s not properly initialized - hass instance is None", self._attr_name)
+                return
+                
             sun_helper = SunHelper(
-                self.hass.config.latitude,  # type: ignore
-                self.hass.config.longitude,  # type: ignore
-                self.hass.config.elevation,  # type: ignore
+                self.hass.config.latitude,
+                self.hass.config.longitude,
+                self.hass.config.elevation
             )
             
             # Get current elevation and azimuth
@@ -577,8 +596,18 @@ class BaseSolEntity:
             # Get next solar events
             self._next_change = self._get_solar_event_fallback(now, sun_helper)
             
+            # Call subclass update logic if available
+            if hasattr(self, '_async_update_logic'):
+                next_update = await getattr(self, '_async_update_logic')(now)
+                if next_update is not None:
+                    async_track_point_in_time(
+                        self.hass, 
+                        lambda x: self.async_update(),
+                        next_update
+                    )
+            
         except Exception as e:
-            _LOGGER.error("Error updating entity: %s", str(e))
+            _LOGGER.error("Error updating entity %s: %s", self._attr_name, str(e))
             raise
 
 class BaseSolSensor(BaseSolEntity, SensorEntity):
@@ -588,10 +617,12 @@ class BaseSolSensor(BaseSolEntity, SensorEntity):
         """Update the sensor."""
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
-            next_update = await self._async_update_logic(now)
-            if next_update is not None:  # Add type check
+            next_update = await getattr(self, '_async_update_logic')(now)
+            if next_update is not None:
                 async_track_point_in_time(
-                    self.hass, self.async_update, next_update
+                    self.hass, 
+                    lambda x: self.async_update(),
+                    next_update
                 )
 
 class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
@@ -601,10 +632,12 @@ class BaseSolBinarySensor(BaseSolEntity, BinarySensorEntity):
         """Update the binary sensor."""
         now = dt_util.utcnow()
         if hasattr(self, '_async_update_logic'):
-            next_update = await self._async_update_logic(now)
-            if next_update is not None:  # Add type check
+            next_update = await getattr(self, '_async_update_logic')(now)
+            if next_update is not None:
                 async_track_point_in_time(
-                    self.hass, self.async_update, next_update
+                    self.hass, 
+                    lambda x: self.async_update(),
+                    next_update
                 )
 
 class SolCalculateSolsticeCurve:

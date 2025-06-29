@@ -32,35 +32,44 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     """Set up Sol sensors with consistent naming conventions."""
     _LOGGER.info("Setting up Sol sensor platform")
     
+    # Use discovery_info if available, otherwise use config
     conf = discovery_info if discovery_info is not None else config
+    
+    # Log the configuration we received
+    _LOGGER.debug("Received configuration: %s", conf)
+    
+    # Get location settings from Home Assistant configuration
     latitude = hass.config.latitude
     longitude = hass.config.longitude
     elevation = hass.config.elevation
+    
+    # Get atmospheric conditions from configuration
     pressure = conf.get(CONF_PRESSURE, DEFAULT_PRESSURE)
     temperature = conf.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE)
     time_zone = hass.config.time_zone
     
+    _LOGGER.info("Using location - Lat: %s, Lon: %s, Elev: %s", 
+                 latitude, longitude, elevation)
     _LOGGER.info("Using atmospheric conditions - Pressure: %s mbar, Temperature: %s °C", 
                  pressure, temperature)
     
     sensors = []
     
     # Create elevation step sensor if configured
-    elevation_step = conf.get("elevation_step")
-    if elevation_step is not None:
-        try:
-            elevation_sensor = SolElevationSensor(
-                step=elevation_step,
-                latitude=latitude,
-                longitude=longitude,
-                elevation=elevation,
-                pressure=pressure,
-                temperature=temperature
-            )
-            sensors.append(elevation_sensor)
-            _LOGGER.info("Created elevation step sensor with step size: %s", elevation_step)
-        except Exception as e:
-            _LOGGER.error("Failed to create elevation sensor: %s", e)
+    elevation_step = conf.get("elevation_step", 1.0)  # Default to 1.0 if not specified
+    try:
+        elevation_sensor = SolElevationSensor(
+            step=elevation_step,
+            latitude=latitude,
+            longitude=longitude,
+            elevation=elevation,
+            pressure=pressure,
+            temperature=temperature
+        )
+        sensors.append(elevation_sensor)
+        _LOGGER.info("Created elevation step sensor with step size: %s", elevation_step)
+    except Exception as e:
+        _LOGGER.error("Failed to create elevation sensor: %s", e)
     
     # Create solstice curve sensor if enabled
     if conf.get("solstice_curve", False):
@@ -77,10 +86,27 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
             _LOGGER.info("Created solstice curve sensor")
         except Exception as e:
             _LOGGER.error("Failed to create solstice curve sensor: %s", e)
+    else:
+        _LOGGER.info("Solstice curve sensor disabled")
 
+    if not sensors:
+        _LOGGER.warning("No sensors were created - check your configuration")
+        return
     
-    async_add_entities(sensors, True)
-    _LOGGER.info("Setup completed with %d sensors", len(sensors))
+    try:
+        # Add entities to Home Assistant
+        async_add_entities(sensors, True)
+        _LOGGER.info("Added %d sensors to Home Assistant", len(sensors))
+        
+        # Trigger initial updates
+        for sensor in sensors:
+            try:
+                await sensor.async_update()
+                _LOGGER.info("Initial update completed for %s", sensor.name)
+            except Exception as e:
+                _LOGGER.error("Error during initial update of %s: %s", sensor.name, e)
+    except Exception as e:
+        _LOGGER.error("Error adding sensors to Home Assistant: %s", e)
 
 class SolElevationSensor(BaseSolSensor):
     """Sensor that tracks sun elevation in configured step intervals."""
