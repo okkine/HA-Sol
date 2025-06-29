@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 14:17-0600-fix-elevation-sensor"
+TEST_VERSION = "2024-12-19 15:50 - Binary sensor logic confirmed: max_days=0 for today, max_days=365 as fallback"
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"

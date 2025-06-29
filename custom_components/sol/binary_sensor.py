@@ -261,22 +261,22 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
             today_start_utc = today_start.astimezone(timezone.utc)
             
-            # First try to get today's events
+            # Always try to get today's events first (even if they've passed)
             today_rise = self._sun_helper.get_time_at_elevation(
                 start_dt=today_start_utc,
                 target_elev=self._current_rising_elev,
                 direction='rising',
-                max_days=1  # Only look for today's event
+                max_days=0  # Only look for today's event
             )
             
             today_set = self._sun_helper.get_time_at_elevation(
                 start_dt=today_start_utc,
                 target_elev=self._current_setting_elev,
                 direction='setting',
-                max_days=1  # Only look for today's event
+                max_days=0  # Only look for today's event
             )
             
-            # If no events today, look for next events within 365 days
+            # If no events today, search 365 days ahead for next events to display
             if not today_rise:
                 today_rise = self._sun_helper.get_time_at_elevation(
                     start_dt=today_start_utc,
@@ -297,65 +297,44 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             next_change = None
             next_event_type = None
             
-            if today_rise and today_set:
-                # Both events exist - determine which comes next
-                if now < today_rise:
-                    # Next event is today's rise
-                    next_change = today_rise
-                    next_event_type = "rising"
-                elif now < today_set:
-                    # Next event is today's set
-                    next_change = today_set
-                    next_event_type = "setting"
-                else:
-                    # Both events have passed - look for tomorrow's rise
-                    tomorrow_start = today_start + timedelta(days=1)
-                    tomorrow_start_utc = tomorrow_start.astimezone(timezone.utc)
-                    tomorrow_rise = self._sun_helper.get_time_at_elevation(
-                        start_dt=tomorrow_start_utc,
-                        target_elev=self._current_rising_elev,
-                        direction='rising',
-                        max_days=1
-                    )
-                    if tomorrow_rise:
-                        next_change = tomorrow_rise
-                        next_event_type = "rising"
-            elif today_rise:
-                # Only rise event exists
-                if now < today_rise:
-                    next_change = today_rise
-                    next_event_type = "rising"
-                else:
-                    # Rise has passed - look for next rise (tomorrow)
-                    tomorrow_start = today_start + timedelta(days=1)
-                    tomorrow_start_utc = tomorrow_start.astimezone(timezone.utc)
-                    next_rise = self._sun_helper.get_time_at_elevation(
-                        start_dt=tomorrow_start_utc,
-                        target_elev=self._current_rising_elev,
-                        direction='rising',
-                        max_days=365  # Look further ahead since we don't know when next rise occurs
-                    )
-                    if next_rise:
+            # First, check if today's events are still upcoming
+            if today_rise and now < today_rise:
+                next_change = today_rise
+                next_event_type = "rising"
+            elif today_set and now < today_set:
+                next_change = today_set
+                next_event_type = "setting"
+            else:
+                # Today's events have passed or don't exist - look for next events
+                # Start search from current time (not today_start) to find next events
+                next_rise = self._sun_helper.get_time_at_elevation(
+                    start_dt=now,
+                    target_elev=self._current_rising_elev,
+                    direction='rising',
+                    max_days=365  # Look up to 365 days ahead
+                )
+                
+                next_set = self._sun_helper.get_time_at_elevation(
+                    start_dt=now,
+                    target_elev=self._current_setting_elev,
+                    direction='setting',
+                    max_days=365  # Look up to 365 days ahead
+                )
+                
+                # Determine which next event comes first
+                if next_rise and next_set:
+                    if next_rise < next_set:
                         next_change = next_rise
                         next_event_type = "rising"
-            elif today_set:
-                # Only set event exists
-                if now < today_set:
-                    next_change = today_set
-                    next_event_type = "setting"
-                else:
-                    # Set has passed - look for next set (tomorrow)
-                    tomorrow_start = today_start + timedelta(days=1)
-                    tomorrow_start_utc = tomorrow_start.astimezone(timezone.utc)
-                    next_set = self._sun_helper.get_time_at_elevation(
-                        start_dt=tomorrow_start_utc,
-                        target_elev=self._current_setting_elev,
-                        direction='setting',
-                        max_days=365  # Look further ahead since we don't know when next set occurs
-                    )
-                    if next_set:
+                    else:
                         next_change = next_set
                         next_event_type = "setting"
+                elif next_rise:
+                    next_change = next_rise
+                    next_event_type = "rising"
+                elif next_set:
+                    next_change = next_set
+                    next_event_type = "setting"
             
             # If no events found within 365 days, mark as unknown
             if not next_change:
