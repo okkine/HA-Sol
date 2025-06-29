@@ -101,8 +101,8 @@ class SunHelper:
             azimuth = math.degrees(self._sun.az)
             
             # Only log every hour of simulation time to reduce spam
-            if dt.minute == 0:
-                _LOGGER.debug("Sun position at %s: %.2f°, %.2f° (called by: %s)", dt, elevation, azimuth, caller)
+            # if dt.minute == 0:
+            #     _LOGGER.debug("Sun position at %s: %.2f°, %.2f° (called by: %s)", dt, elevation, azimuth, caller)
             return elevation, azimuth
             
         except TimezoneError:

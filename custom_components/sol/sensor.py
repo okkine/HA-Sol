@@ -229,6 +229,7 @@ class SolElevationSensor(BaseSolSensor):
                     # Update target elevation to the actual solar noon elevation
                     self._target_elevation = round(noon_elev, 2)
                     self._next_change = solar_noon
+                    _LOGGER.debug("%s: Using solar noon path (not calling get_time_at_elevation)", self.name)
                     return self._next_change
         except Exception as e:
             _LOGGER.debug("Error checking solar noon elevation: %s", e)
@@ -251,6 +252,7 @@ class SolElevationSensor(BaseSolSensor):
                     # Update target elevation to the actual midnight elevation
                     self._target_elevation = round(midnight_elev, 2)
                     self._next_change = next_midnight
+                    _LOGGER.debug("%s: Using solar midnight path (not calling get_time_at_elevation)", self.name)
                     return self._next_change
         except Exception as e:
             _LOGGER.debug("Error checking midnight elevation: %s", e)
@@ -260,6 +262,7 @@ class SolElevationSensor(BaseSolSensor):
         
         # Search for event starting from current time
         # Type assertion is safe here since direction is guaranteed to be 'rising' or 'setting'
+        _LOGGER.debug("%s: Using normal path - calling get_time_at_elevation for target %.2f°", self.name, next_target)
         event_time = self._sun_helper.get_time_at_elevation(
             target_elevation=next_target,
             start_time=now,
