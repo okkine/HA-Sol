@@ -1,14 +1,14 @@
 {
   "domain": "sol",
   "name": "Sol",
-  "documentation": "https://github.com/your-username/ha-sol",
+  "documentation": "https://github.com/okkine/HA-Sol",
   "dependencies": [],
-  "codeowners": ["@your-username"],
+  "codeowners": ["@okkine"],
   "requirements": ["python-slugify", "ephem", "pyatmos"],
   "ssdp": [],
   "zeroconf": [],
   "homekit": {},
-  "version": "1.0.0",
+  "version": "0.0.000",
   "config_flow": true,
   "iot_class": "local_polling"
 } 
