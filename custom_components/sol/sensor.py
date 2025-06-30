@@ -85,6 +85,11 @@ class SunElevationSensor(SensorEntity):
         self._unsub_update = None
 
     @property
+    def should_poll(self) -> bool:
+        """Return False to disable polling - we use custom scheduling instead."""
+        return False
+
+    @property
     def name(self) -> str:
         """Return the name of the sensor."""
         return self._attr_name
