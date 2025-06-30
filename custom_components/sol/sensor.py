@@ -2,16 +2,18 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_point_in_time
+from homeassistant.util import slugify
+from homeassistant.helpers.entity import Entity
 
 from .common import create_sensor_attributes, create_sun_helper
 
@@ -63,17 +65,106 @@ class SolSensor(SensorEntity):
         self._attr_native_value = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-class SunElevationSensor(SensorEntity):
+class BaseSolEntity(Entity):
+    """Base class for Sol entities handling common scheduling and update logic."""
+    
+    def __init__(self, base_name, unique_suffix, name="Sol"):
+        """
+        Initialize base entity with consistent naming conventions.
+        
+        Args:
+            base_name: The descriptive part of the name
+            unique_suffix: The unique identifier suffix
+            name: The prefix for entity names
+        """
+        formatted_name = f"{name} - {base_name}"
+        self._attr_name = ' '.join(word.capitalize() for word in formatted_name.split())
+        self._attr_unique_id = f"sol_{slugify(unique_suffix)}"
+        self._unsub_update = None
+        self._attr_available = False  # Start as unavailable until first update
+        self._next_update = None
+
+    @property
+    def next_change(self):
+        """Return the next scheduled update time."""
+        return self._next_update
+
+    @property
+    def should_poll(self):
+        """Disable polling for this entity."""
+        return False
+
+    async def async_will_remove_from_hass(self):
+        """Cancel next update when entity is removed."""
+        self.cancel_scheduled_update()
+
+    def cancel_scheduled_update(self):
+        """Cancel any scheduled updates."""
+        if self._unsub_update:
+            self._unsub_update()
+            self._unsub_update = None
+
+    async def async_added_to_hass(self):
+        """Call when entity is added to hass."""
+        await super().async_added_to_hass()
+        # Schedule immediate update when added to Home Assistant
+        self.hass.async_create_task(self.async_update())
+
+    async def async_update(self, now=None):
+        """Common update logic and scheduling."""
+        try:
+            next_update_time = await self._async_update_logic(now)
+            self._next_update = next_update_time
+            
+            if next_update_time:
+                if next_update_time <= dt_util.utcnow():
+                    next_update_time = dt_util.utcnow() + timedelta(seconds=5)
+                    _LOGGER.warning("Rescheduling %s to %s", self.name, next_update_time)
+                
+                self.cancel_scheduled_update()
+                self._unsub_update = async_track_point_in_time(
+                    self.hass, self.async_update, next_update_time
+                )
+                _LOGGER.debug("Scheduled next update for %s at %s", self.name, next_update_time)
+            
+            # Set entity as available after successful update
+            self._attr_available = True
+            
+            if self.entity_id:
+                self.async_write_ha_state()
+                
+        except Exception as e:
+            _LOGGER.error("Error updating %s: %s", self.name, e, exc_info=True)
+            self._attr_available = False
+            next_update_time = dt_util.utcnow() + timedelta(minutes=5)
+            self.cancel_scheduled_update()
+            self._unsub_update = async_track_point_in_time(
+                self.hass, self.async_update, next_update_time
+            )
+            if self.entity_id:
+                self.async_write_ha_state()
+
+    async def _async_update_logic(self, now):
+        """Sensor-specific update logic to be implemented by subclasses.
+        
+        Should return the next update time or None if no scheduling needed.
+        """
+        raise NotImplementedError("Subclasses must implement this method")
+
+
+class BaseSolSensor(BaseSolEntity, SensorEntity):
+    """Base class for Sol sensor entities."""
+    pass
+
+
+class SunElevationSensor(BaseSolSensor):
     """Representation of a Sun Elevation sensor."""
 
     def __init__(self, sun_helper, elevation_step) -> None:
         """Initialize the sensor."""
-        # Use the common naming convention
-        sensor_name, unique_id = create_sensor_attributes("Elevation")
+        # Initialize base entity
+        super().__init__("Elevation", "elevation", "Sol")
         
-        self._attr_name = sensor_name
-        self._attr_unique_id = unique_id
-        self._attr_native_value = "Unknown"
         self._attr_icon = "mdi:weather-sunny"
         self._attr_native_unit_of_measurement = "°"
         
@@ -81,18 +172,9 @@ class SunElevationSensor(SensorEntity):
         self.sun_helper = sun_helper
         self.elevation_step = elevation_step
         
-        # Schedule tracking
-        self._unsub_update = None
-
-    @property
-    def should_poll(self) -> bool:
-        """Return False to disable polling - we use custom scheduling instead."""
-        return False
-
-    @property
-    def name(self) -> str:
-        """Return the name of the sensor."""
-        return self._attr_name
+        # State tracking
+        self._current_direction = None
+        self._target_elevation = None
 
     @property
     def native_value(self) -> StateType:
@@ -109,108 +191,86 @@ class SunElevationSensor(SensorEntity):
             "pressure_mbar": round(self.sun_helper.pressure, 1) if self.sun_helper.pressure is not None else None,
             "temperature_c": round(self.sun_helper.temperature, 1) if self.sun_helper.temperature is not None else None,
             "horizon_deg": round(self.sun_helper.horizon, 1) if self.sun_helper.horizon is not None else None,
-            "calculation_time": getattr(self, '_calculation_time', None),
-            "azimuth_deg": getattr(self, '_cur_azimuth', None),
-            "cur_elevation": getattr(self, '_cur_elevation', None),
-            "next_target_elevation": getattr(self, '_next_target_elevation', None),
-            "next_update_time": getattr(self, '_next_update_time', None),
-            "sun_direction": getattr(self, '_sun_direction', None),
-            "solar_noon": getattr(self, '_solar_noon', None),
-            "solar_midnight": getattr(self, '_solar_midnight', None),
-            "next_sunrise": getattr(self, '_next_sunrise', None),
-            "next_sunset": getattr(self, '_next_sunset', None),
+            "next_change": self.next_change,
+            "direction": self._current_direction,
+            "target_elevation": self._target_elevation,
             "elevation_step": self.elevation_step,
         }
 
-    @callback
-    def _schedule_update(self, update_time: datetime) -> None:
-        """Schedule the next update."""
-        # Cancel any existing scheduled update
-        if self._unsub_update:
-            self._unsub_update()
-            self._unsub_update = None
+    async def _async_update_logic(self, now):
+        """Sensor-specific update logic."""
+        now = now or dt_util.utcnow()
+        _LOGGER.debug("Elevation sensor update triggered at %s", now)
         
-        # Only schedule if hass is available
-        if not hasattr(self, 'hass') or self.hass is None:
-            return
-        
-        # Don't schedule if the time has already passed
-        if update_time <= dt_util.now():
-            _LOGGER.warning("Update time has already passed, scheduling immediate update")
-            # Schedule immediate update using async_track_time_change
-            self._unsub_update = async_track_time_change(
-                self.hass,
-                self._handle_scheduled_update,
-                second=0  # Update at the start of the next minute
-            )
-            return
-        
-        # Schedule the next update using async_track_time_change
         try:
-            self._unsub_update = async_track_time_change(
-                self.hass,
-                self._handle_scheduled_update,
-                hour=update_time.hour,
-                minute=update_time.minute,
-                second=update_time.second
-            )
-            _LOGGER.debug("Scheduled next update at %s", update_time.strftime("%H:%M:%S"))
-        except Exception as e:
-            _LOGGER.error("Failed to schedule update: %s", e)
-            self._unsub_update = None
-
-    @callback
-    def _handle_scheduled_update(self, _now) -> None:
-        """Handle the scheduled update."""
-        self._unsub_update = None
-        self.async_schedule_update_ha_state(True)
-
-    async def async_will_remove_from_hass(self) -> None:
-        """Cancel any scheduled updates when the sensor is removed."""
-        if self._unsub_update:
-            self._unsub_update()
-            self._unsub_update = None
-
-    async def async_update(self) -> None:
-        """Fetch new state data for the sensor."""
-        try:
-            # Get current local time with timezone
-            current_time = dt_util.now()
-            cur_azimuth, cur_elevation, solar_noon, solar_midnight, next_sunrise, next_sunset = self.sun_helper.get_sun_position(current_time)
+            # Get current elevation and azimuth using helper
+            cur_azimuth, cur_elevation, solar_noon, solar_midnight, next_sunrise, next_sunset = self.sun_helper.get_sun_position(now)
+            
+            # Update state values
+            self._attr_native_value = round(cur_elevation, 2)
+            self._attr_available = True
             
             # Determine sun direction
-            sun_direction = self.sun_helper._get_sun_direction(current_time, solar_noon, solar_midnight)
-            
+            try:
+                sun_direction = self.sun_helper._get_sun_direction(now, solar_noon, solar_midnight)
+                if sun_direction not in ["rising", "setting"]:
+                    raise ValueError(f"Invalid direction: {sun_direction}")
+            except Exception as e:
+                _LOGGER.error("Error determining sun direction: %s", e)
+                # Fallback to elevation trend method
+                future = now + timedelta(minutes=15)
+                future_azimuth, future_elevation, _, _, _, _ = self.sun_helper.get_sun_position(future)
+                sun_direction = "rising" if future_elevation > cur_elevation else "setting"
+
+            self._current_direction = sun_direction
+
             # Calculate next target elevation based on direction and step
             if sun_direction == "rising":
-                next_target = (round(cur_elevation / self.elevation_step) * self.elevation_step) + self.elevation_step
+                next_target = round(cur_elevation / self.elevation_step) * self.elevation_step + self.elevation_step
             else:
-                next_target = round(cur_elevation / self.elevation_step) * self.elevation_step - self.elevation_step
+                next_target = (round(cur_elevation / self.elevation_step) * self.elevation_step) - self.elevation_step
+            
+            # Store target elevation in attribute
+            self._target_elevation = round(next_target, 2)
+            
+            # Clamp to physical limits
+            next_target = max(min(next_target, 90), -90)
             
             # Get the time when sun reaches the next target elevation
-            next_rising_time, next_setting_time = self.sun_helper.get_time_at_elevation(next_target, current_time)
-            next_update_time = next_rising_time if sun_direction == "rising" else next_setting_time
+            next_rising_time, next_setting_time = self.sun_helper.get_time_at_elevation(next_target, now)
+            event_time = next_rising_time if sun_direction == "rising" else next_setting_time
             
-            # Store calculation parameters for attributes
-            self._calculation_time = current_time.isoformat()
-            self._cur_azimuth = round(cur_azimuth, 2)
-            self._sun_direction = sun_direction
-            self._cur_elevation = round(cur_elevation, 2)
-            self._next_target_elevation = round(next_target, 2)
-            self._next_update_time = next_update_time.isoformat()
-            self._solar_noon = solar_noon.isoformat()
-            self._solar_midnight = solar_midnight.isoformat()
-            self._next_sunrise = next_sunrise.isoformat()
-            self._next_sunset = next_sunset.isoformat()
+            # Fallback to next solar event if needed
+            if not event_time:
+                # Use sun position calculator parameters for observer
+                import ephem
+                from datetime import timezone
+                now_utc = now.astimezone(timezone.utc).replace(tzinfo=None)
+                observer = ephem.Observer()
+                observer.lat = str(self.sun_helper.latitude)
+                observer.lon = str(self.sun_helper.longitude)
+                observer.elevation = self.sun_helper.elevation
+                observer.pressure = self.sun_helper.pressure
+                observer.temp = self.sun_helper.temperature
+                observer.date = ephem.Date(now_utc)
+                sun = ephem.Sun()
+                try:
+                    event_time = observer.next_transit(sun).datetime().replace(tzinfo=timezone.utc)
+                    _LOGGER.debug("Using fallback solar event at %s", event_time)
+                except Exception:
+                    event_time = now + timedelta(minutes=5)
+                    _LOGGER.debug("Using emergency fallback update at %s", event_time)
             
-            # Update sensor with current elevation
-            self._attr_native_value = round(cur_elevation, 2)
+            _LOGGER.debug(
+                "Current: %.2f° (azimuth: %.2f°), Direction: %s, Target: %.2f°",
+                cur_elevation, cur_azimuth, sun_direction, self._target_elevation
+            )
             
-            # Schedule the next update
-            self._schedule_update(next_update_time)
+            # Return next update time
+            return event_time
             
         except Exception as e:
-            # Fallback to error state if calculation fails
-            _LOGGER.error("Error updating Sol elevation sensor: %s", e)
+            _LOGGER.error("Error updating Sol elevation sensor: %s", e, exc_info=True)
             self._attr_native_value = None
-            self._attr_icon = "mdi:alert" 
+            self._attr_icon = "mdi:alert"
+            return now + timedelta(minutes=5)  # Retry in 5 minutes 
