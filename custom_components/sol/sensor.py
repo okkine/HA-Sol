@@ -79,6 +79,9 @@ class SunElevationSensor(SensorEntity):
         # Store the sun helper for calculations
         self.sun_helper = sun_helper
         self.elevation_step = elevation_step
+        
+        # Schedule tracking
+        self._unsub_update = None
 
     @property
     def name(self) -> str:
@@ -112,6 +115,46 @@ class SunElevationSensor(SensorEntity):
             "next_sunset": getattr(self, '_next_sunset', None),
             "elevation_step": self.elevation_step,
         }
+
+    @callback
+    def _schedule_update(self, update_time: datetime) -> None:
+        """Schedule the next update."""
+        # Cancel any existing scheduled update
+        if self._unsub_update:
+            self._unsub_update()
+            self._unsub_update = None
+        
+        # Only schedule if hass is available
+        if not hasattr(self, 'hass') or self.hass is None:
+            return
+        
+        # Calculate delay in seconds
+        delay_seconds = (update_time - dt_util.now()).total_seconds()
+        
+        # Don't schedule if the time has already passed
+        if delay_seconds <= 0:
+            _LOGGER.warning("Update time has already passed, scheduling immediate update")
+            delay_seconds = 1
+        
+        # Schedule the next update using Home Assistant's async_call_later
+        try:
+            self._unsub_update = self.hass.async_call_later(delay_seconds, self._handle_scheduled_update)
+            _LOGGER.debug("Scheduled next update in %.1f seconds", delay_seconds)
+        except Exception as e:
+            _LOGGER.error("Failed to schedule update: %s", e)
+            self._unsub_update = None
+
+    @callback
+    def _handle_scheduled_update(self, _now) -> None:
+        """Handle the scheduled update."""
+        self._unsub_update = None
+        self.async_schedule_update_ha_state(True)
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel any scheduled updates when the sensor is removed."""
+        if self._unsub_update:
+            self._unsub_update()
+            self._unsub_update = None
 
     async def async_update(self) -> None:
         """Fetch new state data for the sensor."""
@@ -147,6 +190,9 @@ class SunElevationSensor(SensorEntity):
             
             # Update sensor with current elevation
             self._attr_native_value = round(cur_elevation, 2)
+            
+            # Schedule the next update
+            self._schedule_update(next_update_time)
             
         except Exception as e:
             # Fallback to error state if calculation fails
