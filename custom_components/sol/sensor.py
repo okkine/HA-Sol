@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
+from homeassistant.util import dt as dt_util
 
 from .common import create_sensor_attributes, create_sun_helper
 
@@ -82,12 +83,30 @@ class SunElevationSensor(SensorEntity):
         """Return the state of the sensor."""
         return self._attr_native_value
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return entity specific state attributes."""
+        return {
+            "latitude": self.sun_helper.latitude,
+            "longitude": self.sun_helper.longitude,
+            "elevation_m": self.sun_helper.elevation,
+            "pressure_mbar": self.sun_helper.pressure,
+            "temperature_c": self.sun_helper.temperature,
+            "horizon_deg": self.sun_helper.horizon,
+            "calculation_time": getattr(self, '_calculation_time', None),
+            "azimuth_deg": getattr(self, '_azimuth', None),
+        }
+
     async def async_update(self) -> None:
         """Fetch new state data for the sensor."""
         try:
-            # Get current sun position
-            current_time = datetime.now()
+            # Get current local time with timezone
+            current_time = dt_util.now()
             azimuth, elevation = self.sun_helper.get_sun_position(current_time)
+            
+            # Store calculation parameters for attributes
+            self._calculation_time = current_time.isoformat()
+            self._azimuth = round(azimuth, 2)
             
             # Update sensor with current elevation
             self._attr_native_value = round(elevation, 2)
