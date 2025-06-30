@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.const import CONF_LATITUDE, CONF_LONGITUDE, CONF_ELEVATION
 
 from .const import DOMAIN, NAME
 
@@ -30,27 +31,29 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 step_id="user",
                 data_schema=vol.Schema(
                     {
+                        vol.Required("location_mode", default="system"): vol.In(["system", "manual"]),
                         vol.Optional("latitude"): vol.Coerce(float),
                         vol.Optional("longitude"): vol.Coerce(float),
-                        vol.Optional("elevation", default=0): vol.Coerce(float),
-                        vol.Optional("pressure_mode", default="auto"): vol.In(["auto", "manual"]),
+                        vol.Optional("elevation"): vol.Coerce(float),
+                        vol.Required("pressure_mode", default="auto"): vol.In(["auto", "manual"]),
                         vol.Optional("pressure"): vol.Coerce(float),
                         vol.Optional("temperature", default=20.0): vol.Coerce(float),
                         vol.Optional("horizon", default=0.0): vol.Coerce(float),
                     }
                 ),
                 description_placeholders={
-                    "note": "Leave latitude and longitude empty to use system defaults. "
-                           "Pressure can be calculated automatically from elevation or set manually."
+                    "note": "Choose whether to use system defaults or manual settings for location and pressure."
                 }
             )
 
-        # Validate coordinates if provided
+        # Validate coordinates if manual mode is selected
         errors = {}
-        if user_input.get("latitude") is not None and user_input.get("longitude") is not None:
-            lat = user_input["latitude"]
-            lon = user_input["longitude"]
-            if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        if user_input.get("location_mode") == "manual":
+            lat = user_input.get("latitude")
+            lon = user_input.get("longitude")
+            if lat is None or lon is None:
+                errors["base"] = "coordinates_required"
+            elif not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
                 errors["base"] = "invalid_coordinates"
 
         # Validate pressure if manual mode is selected
@@ -62,10 +65,11 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 step_id="user",
                 data_schema=vol.Schema(
                     {
+                        vol.Required("location_mode", default=user_input.get("location_mode", "system")): vol.In(["system", "manual"]),
                         vol.Optional("latitude", default=user_input.get("latitude")): vol.Coerce(float),
                         vol.Optional("longitude", default=user_input.get("longitude")): vol.Coerce(float),
-                        vol.Optional("elevation", default=user_input.get("elevation", 0)): vol.Coerce(float),
-                        vol.Optional("pressure_mode", default=user_input.get("pressure_mode", "auto")): vol.In(["auto", "manual"]),
+                        vol.Optional("elevation", default=user_input.get("elevation")): vol.Coerce(float),
+                        vol.Required("pressure_mode", default=user_input.get("pressure_mode", "auto")): vol.In(["auto", "manual"]),
                         vol.Optional("pressure", default=user_input.get("pressure")): vol.Coerce(float),
                         vol.Optional("temperature", default=user_input.get("temperature", 20.0)): vol.Coerce(float),
                         vol.Optional("horizon", default=user_input.get("horizon", 0.0)): vol.Coerce(float),
@@ -73,18 +77,23 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ),
                 errors=errors,
                 description_placeholders={
-                    "note": "Leave latitude and longitude empty to use system defaults. "
-                           "Pressure can be calculated automatically from elevation or set manually."
+                    "note": "Choose whether to use system defaults or manual settings for location and pressure."
                 }
             )
 
-        # Store configuration
+        # Get system defaults
+        system_lat = self.hass.config.latitude
+        system_lon = self.hass.config.longitude
+        system_elevation = self.hass.config.elevation
+
+        # Store configuration with proper defaults
         info = {
-            "latitude": user_input.get("latitude"),
-            "longitude": user_input.get("longitude"),
-            "elevation": user_input.get("elevation", 0),
+            "location_mode": user_input.get("location_mode", "system"),
+            "latitude": user_input.get("latitude") if user_input.get("location_mode") == "manual" else system_lat,
+            "longitude": user_input.get("longitude") if user_input.get("location_mode") == "manual" else system_lon,
+            "elevation": user_input.get("elevation") if user_input.get("location_mode") == "manual" else system_elevation,
             "pressure_mode": user_input.get("pressure_mode", "auto"),
-            "pressure": user_input.get("pressure"),
+            "pressure": user_input.get("pressure") if user_input.get("pressure_mode") == "manual" else None,
             "temperature": user_input.get("temperature", 20.0),
             "horizon": user_input.get("horizon", 0.0),
         }
