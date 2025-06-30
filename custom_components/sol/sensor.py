@@ -95,11 +95,11 @@ class SunElevationSensor(SensorEntity):
         if not hasattr(self, 'hass') or self.hass is None:
             return
         
-        # Schedule the next update
-        self._unsub_update = self.hass.helpers.event.async_call_later(
-            (update_time - dt_util.now()).total_seconds(),
-            self._handle_scheduled_update
-        )
+        # Calculate delay in seconds
+        delay_seconds = (update_time - dt_util.now()).total_seconds()
+        
+        # Schedule the next update using the correct Home Assistant API
+        self._unsub_update = self.hass.async_call_later(delay_seconds, self._handle_scheduled_update)
     
     @callback
     def _handle_scheduled_update(self, _now) -> None:
