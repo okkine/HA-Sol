@@ -5,4 +5,4 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Version
-VERSION = "0.0.000" 
+VERSION = "0.0.1" 
