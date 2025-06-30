@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 19:02:00"  # Create shared method for event calculations in binary sensor
+TEST_VERSION = "2025-06-29 19:17:06"  # Fix solstice curve init, remove sun_direction, add midnight updates
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"

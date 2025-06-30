@@ -146,7 +146,6 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             "current_setting_elevation": self._current_setting_elev,
             "solstice_curve": self._solstice_curve,
             "seasonally_dynamic": seasonally_dynamic,
-            "sun_direction": None,
             "next_event_type": None
         }
         
@@ -292,6 +291,44 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
         
         return today_rise, today_set, next_change, next_event_type
 
+    def _get_next_update_time(self, now, next_change):
+        """Calculate the next update time, considering both next change and midnight local time.
+        
+        The binary sensor should update at:
+        1. The next change time (for state changes)
+        2. Midnight local time (to refresh rising/setting attributes for the new day)
+        
+        Args:
+            now: Current UTC datetime
+            next_change: Next change time (can be None)
+            
+        Returns:
+            Next update time in UTC
+        """
+        local_tz = dt_util.get_time_zone(self._time_zone)
+        now_local = now.astimezone(local_tz)
+        
+        # Calculate next midnight local time
+        next_midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        next_midnight_utc = next_midnight_local.astimezone(timezone.utc)
+        
+        # If we have a next change time, return the earlier of next_change or midnight
+        if next_change:
+            next_update = min(next_change, next_midnight_utc)
+            _LOGGER.debug(
+                "%s: Next update scheduled for %s (next_change: %s, midnight: %s)",
+                self.name, next_update, next_change, next_midnight_utc
+            )
+        else:
+            # No events found - update at midnight
+            next_update = next_midnight_utc
+            _LOGGER.debug(
+                "%s: No events found, next update scheduled for midnight: %s",
+                self.name, next_update
+            )
+        
+        return next_update
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         await super().async_added_to_hass()
@@ -308,7 +345,6 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             "current_rising_elevation": self._current_rising_elev,
             "current_setting_elevation": self._current_setting_elev,
             "seasonally_dynamic": self._seasonally_dynamic,
-            "sun_direction": "unknown",  # Will be calculated in first update
             "next_event_type": next_event_type or "unknown"
         })
         
@@ -420,17 +456,7 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             today_rise, today_set, next_change, next_event_type = self._calculate_todays_events_and_next_change(now)
             
             # === DETERMINE NEXT UPDATE TIME ===
-            next_update = None
-            
-            if next_change:
-                # Update at the next change time
-                next_update = next_change
-            else:
-                # No events found - update at midnight local time to check for new day
-                local_tz = dt_util.get_time_zone(self._time_zone)
-                now_local = now.astimezone(local_tz)
-                midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-                next_update = midnight_local.astimezone(timezone.utc)
+            next_update = self._get_next_update_time(now, next_change)
             
             # === UPDATE STATE ATTRIBUTES ===
             # Base attributes for all sensors
@@ -441,7 +467,6 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
                 "current_rising_elevation": self._current_rising_elev,
                 "current_setting_elevation": self._current_setting_elev,
                 "seasonally_dynamic": self._seasonally_dynamic,
-                "sun_direction": sun_direction,
                 "next_event_type": next_event_type,
                 "current_elevation_raw": current_elev
             }

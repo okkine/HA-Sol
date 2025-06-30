@@ -334,18 +334,17 @@ class SolSolsticeCurveSensor(BaseSolSensor):
             
             # Start from beginning of today in local time
             start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-            start_of_today_utc = start_of_today_local.astimezone(dt_util.UTC)
             
             # Get today's sunrise and sunset times
             todays_sunrise = self._sun_helper.get_time_at_elevation(
-                start_dt=start_of_today_utc,
+                start_dt=start_of_today_local,  # Use local midnight - method converts to UTC internally
                 target_elev=0,
                 direction='rising',
                 max_days=0,
                 caller=self.name
             )
             todays_sunset = self._sun_helper.get_time_at_elevation(
-                start_dt=start_of_today_utc,
+                start_dt=start_of_today_local,  # Use local midnight - method converts to UTC internally
                 target_elev=0,
                 direction='setting',
                 max_days=0,
