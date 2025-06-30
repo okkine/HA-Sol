@@ -1,7 +1,7 @@
 """Common utilities and calculations for the Sol integration."""
 import re
 from typing import Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from slugify import slugify
 import ephem
 import math
@@ -198,7 +198,12 @@ class SunHelper:
             Elevation is measured from horizon (0°) to zenith (90°)
         """
         # Convert local time to UTC (ephem requires UTC)
-        utc_time = local_time.astimezone().replace(tzinfo=None)
+        if local_time.tzinfo is None:
+            # If no timezone info, assume it's already UTC
+            utc_time = local_time
+        else:
+            # Convert to UTC and remove timezone info for ephem
+            utc_time = local_time.astimezone(timezone.utc).replace(tzinfo=None)
         
         # Set the observer's date to the UTC time
         self.observer.date = utc_time

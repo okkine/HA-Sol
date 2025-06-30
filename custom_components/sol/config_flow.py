@@ -27,16 +27,21 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle the initial step."""
         if user_input is None:
+            # Get system defaults for display
+            system_lat = self.hass.config.latitude
+            system_lon = self.hass.config.longitude
+            system_elevation = self.hass.config.elevation
+            
             return self.async_show_form(
                 step_id="user",
                 data_schema=vol.Schema(
                     {
                         vol.Required("location_mode", default="system"): vol.In(["system", "manual"]),
-                        vol.Optional("latitude"): vol.Coerce(float),
-                        vol.Optional("longitude"): vol.Coerce(float),
-                        vol.Optional("elevation"): vol.Coerce(float),
+                        vol.Optional("latitude", description=f"System default: {system_lat}°"): vol.Coerce(float),
+                        vol.Optional("longitude", description=f"System default: {system_lon}°"): vol.Coerce(float),
+                        vol.Optional("elevation", description=f"System default: {system_elevation}m"): vol.Coerce(float),
                         vol.Required("pressure_mode", default="auto"): vol.In(["auto", "manual"]),
-                        vol.Optional("pressure"): vol.Coerce(float),
+                        vol.Optional("pressure", description="Not used in auto mode"): vol.Coerce(float),
                         vol.Optional("temperature", default=20.0): vol.Coerce(float),
                         vol.Optional("horizon", default=0.0): vol.Coerce(float),
                     }
@@ -45,6 +50,11 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "note": "Choose whether to use system defaults or manual settings for location and pressure."
                 }
             )
+
+        # Get system defaults
+        system_lat = self.hass.config.latitude
+        system_lon = self.hass.config.longitude
+        system_elevation = self.hass.config.elevation
 
         # Validate coordinates if manual mode is selected
         errors = {}
@@ -66,11 +76,11 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=vol.Schema(
                     {
                         vol.Required("location_mode", default=user_input.get("location_mode", "system")): vol.In(["system", "manual"]),
-                        vol.Optional("latitude", default=user_input.get("latitude")): vol.Coerce(float),
-                        vol.Optional("longitude", default=user_input.get("longitude")): vol.Coerce(float),
-                        vol.Optional("elevation", default=user_input.get("elevation")): vol.Coerce(float),
+                        vol.Optional("latitude", default=user_input.get("latitude"), description=f"System default: {system_lat}°"): vol.Coerce(float),
+                        vol.Optional("longitude", default=user_input.get("longitude"), description=f"System default: {system_lon}°"): vol.Coerce(float),
+                        vol.Optional("elevation", default=user_input.get("elevation"), description=f"System default: {system_elevation}m"): vol.Coerce(float),
                         vol.Required("pressure_mode", default=user_input.get("pressure_mode", "auto")): vol.In(["auto", "manual"]),
-                        vol.Optional("pressure", default=user_input.get("pressure")): vol.Coerce(float),
+                        vol.Optional("pressure", default=user_input.get("pressure"), description="Not used in auto mode"): vol.Coerce(float),
                         vol.Optional("temperature", default=user_input.get("temperature", 20.0)): vol.Coerce(float),
                         vol.Optional("horizon", default=user_input.get("horizon", 0.0)): vol.Coerce(float),
                     }
@@ -80,11 +90,6 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     "note": "Choose whether to use system defaults or manual settings for location and pressure."
                 }
             )
-
-        # Get system defaults
-        system_lat = self.hass.config.latitude
-        system_lon = self.hass.config.longitude
-        system_elevation = self.hass.config.elevation
 
         # Store configuration with proper defaults
         info = {
