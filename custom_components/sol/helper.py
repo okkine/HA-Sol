@@ -448,9 +448,40 @@ class SunHelper:
                 current_search_date = utc_date
                 day_offset = 0
                 
+                # For max_days=0, we want to search only within the current local date
+                # Convert the search window to use local date boundaries
+                if max_days == 0:
+                    # Get the local date from the input datetime
+                    local_tz = start_dt.tzinfo
+                    local_date = start_dt.astimezone(local_tz).date()
+                    
+                    # Create start and end of the local date in UTC
+                    local_start = datetime.combine(local_date, time.min).replace(tzinfo=local_tz)
+                    local_end = datetime.combine(local_date, time.max).replace(tzinfo=local_tz)
+                    local_start_utc = local_start.astimezone(timezone.utc)
+                    local_end_utc = local_end.astimezone(timezone.utc)
+                    
+                    _LOGGER.debug(
+                        "%s: Local date search - local_date=%s, local_start_utc=%s, local_end_utc=%s",
+                        caller, local_date, local_start_utc, local_end_utc
+                    )
+                    
+                    # Search within the local date boundaries
+                    search_start_date = local_start_utc.date()
+                    search_end_date = local_end_utc.date()
+                else:
+                    # For multi-day searches, use the original logic
+                    search_start_date = utc_date
+                    search_end_date = utc_date + timedelta(days=search_days)
+                
                 while day_offset <= search_days:
                     # Set observer date for this search day
-                    search_date = current_search_date + timedelta(days=day_offset)
+                    search_date = search_start_date + timedelta(days=day_offset)
+                    
+                    # Skip if we're past the search end date
+                    if search_date > search_end_date:
+                        break
+                        
                     observer.date = ephem.Date(search_date)
                     
                     _LOGGER.debug(
@@ -471,9 +502,15 @@ class SunHelper:
                             )
                             
                             # Check if it's within our search window
-                            end_dt = datetime.combine(utc_date + timedelta(days=search_days), time.max, tzinfo=timezone.utc)
-                            if rise_dt <= end_dt:
-                                return rise_dt
+                            if max_days == 0:
+                                # For today-only search, check if it's within the local date
+                                if local_start_utc <= rise_dt <= local_end_utc:
+                                    return rise_dt
+                            else:
+                                # For multi-day search, use the original logic
+                                end_dt = datetime.combine(utc_date + timedelta(days=search_days), time.max, tzinfo=timezone.utc)
+                                if rise_dt <= end_dt:
+                                    return rise_dt
                     else:  # setting
                         # Get next setting time for this day
                         next_set = observer.next_setting(self._sun)
@@ -487,9 +524,15 @@ class SunHelper:
                             )
                             
                             # Check if it's within our search window
-                            end_dt = datetime.combine(utc_date + timedelta(days=search_days), time.max, tzinfo=timezone.utc)
-                            if set_dt <= end_dt:
-                                return set_dt
+                            if max_days == 0:
+                                # For today-only search, check if it's within the local date
+                                if local_start_utc <= set_dt <= local_end_utc:
+                                    return set_dt
+                            else:
+                                # For multi-day search, use the original logic
+                                end_dt = datetime.combine(utc_date + timedelta(days=search_days), time.max, tzinfo=timezone.utc)
+                                if set_dt <= end_dt:
+                                    return set_dt
                     
                     # Move to next day
                     day_offset += 1

@@ -156,6 +156,53 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
         _LOGGER.debug("Initialized binary elevation sensor: %s (dynamic: %s)", 
                      user_name, seasonally_dynamic)
 
+    async def async_added_to_hass(self) -> None:
+        """Run when entity about to be added to hass."""
+        await super().async_added_to_hass()
+        
+        # Initialize with today's events immediately
+        now = dt_util.utcnow()
+        local_tz = dt_util.get_time_zone(self._time_zone)
+        now_local = now.astimezone(local_tz)
+        today_local_date = now_local.date()
+        
+        # Create today at midnight in local time for rising/setting attributes
+        today_midnight_local = datetime.combine(today_local_date, time.min).replace(tzinfo=local_tz)
+        
+        # Get today's events for initial attributes
+        today_rise = self._sun_helper.get_time_at_elevation(
+            start_dt=today_midnight_local,  # Use today at midnight to get today's events
+            target_elev=self._current_rising_elev,
+            direction='rising',
+            max_days=0,
+            caller=self.name
+        )
+        
+        today_set = self._sun_helper.get_time_at_elevation(
+            start_dt=today_midnight_local,  # Use today at midnight to get today's events
+            target_elev=self._current_setting_elev,
+            direction='setting',
+            max_days=0,
+            caller=self.name
+        )
+        
+        # Set initial attributes
+        self._attr_extra_state_attributes.update({
+            "rising": today_rise.isoformat() if today_rise else "unknown",
+            "setting": today_set.isoformat() if today_set else "unknown",
+            "next_change": "unknown",
+            "current_rising_elevation": self._current_rising_elev,
+            "current_setting_elevation": self._current_setting_elev,
+            "seasonally_dynamic": self._seasonally_dynamic,
+            "sun_direction": "unknown",
+            "next_event_type": "unknown"
+        })
+        
+        _LOGGER.info("%s: Initialized with today's events - rising: %s, setting: %s", 
+                    self.name, 
+                    today_rise.isoformat() if today_rise else "unknown",
+                    today_set.isoformat() if today_set else "unknown")
+
     async def _async_update_logic(self, now):
         try:
             now = now or dt_util.utcnow()
@@ -255,13 +302,13 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             
             # === CALCULATE TODAY'S RISE AND SET TIMES ===
             # Get today's rise and set times for the current thresholds
-            # Use date-only conversion to handle timezone boundaries correctly
+            # Use today at midnight in local time to ensure we get today's events
             local_tz = dt_util.get_time_zone(self._time_zone)
             now_local = now.astimezone(local_tz)
             today_local_date = now_local.date()  # Just the date part
             
-            # Create midnight of today in local time for "rising" and "setting" attributes
-            today_midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+            # Create today at midnight in local time for rising/setting attributes
+            today_midnight_local = datetime.combine(today_local_date, time.min).replace(tzinfo=local_tz)
             
             _LOGGER.debug(
                 "%s: Date conversion - now=%s, now_local=%s, today_local_date=%s, today_midnight_local=%s",
@@ -269,9 +316,9 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             )
             
             # Always try to get today's events first (even if they've passed)
-            # Use midnight of today to ensure we get today's events, not tomorrow's
+            # Use today at midnight to ensure we get today's events, not tomorrow's
             today_rise = self._sun_helper.get_time_at_elevation(
-                start_dt=today_midnight_local,  # Use local midnight - method converts to UTC internally
+                start_dt=today_midnight_local,  # Use today at midnight to get today's events
                 target_elev=self._current_rising_elev,
                 direction='rising',
                 max_days=0,  # Only look for today's event
@@ -279,7 +326,7 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             )
             
             today_set = self._sun_helper.get_time_at_elevation(
-                start_dt=today_midnight_local,  # Use local midnight - method converts to UTC internally
+                start_dt=today_midnight_local,  # Use today at midnight to get today's events
                 target_elev=self._current_setting_elev,
                 direction='setting',
                 max_days=0,  # Only look for today's event
@@ -288,26 +335,38 @@ class SolBinaryElevationSensor(BaseSolBinarySensor):
             
             # If no events today, search 365 days ahead for next events to display
             if not today_rise:
-                # Start search from midnight tomorrow to get next day's events
+                # Start search from tomorrow midnight to get next day's events
                 tomorrow_midnight_local = today_midnight_local + timedelta(days=1)
-                today_rise = self._sun_helper.get_time_at_elevation(
+                future_rise = self._sun_helper.get_time_at_elevation(
                     start_dt=tomorrow_midnight_local,  # Start from tomorrow midnight
                     target_elev=self._current_rising_elev,
                     direction='rising',
                     max_days=365,  # Look up to 365 days ahead
                     caller=self.name
                 )
+                # Only use future event if it's within today's local date
+                if future_rise:
+                    future_rise_local = future_rise.astimezone(local_tz)
+                    if future_rise_local.date() == today_local_date:
+                        today_rise = future_rise
+                        _LOGGER.debug("%s: Using future rising event %s for today", self.name, today_rise)
             
             if not today_set:
-                # Start search from midnight tomorrow to get next day's events
+                # Start search from tomorrow midnight to get next day's events
                 tomorrow_midnight_local = today_midnight_local + timedelta(days=1)
-                today_set = self._sun_helper.get_time_at_elevation(
+                future_set = self._sun_helper.get_time_at_elevation(
                     start_dt=tomorrow_midnight_local,  # Start from tomorrow midnight
                     target_elev=self._current_setting_elev,
                     direction='setting',
                     max_days=365,  # Look up to 365 days ahead
                     caller=self.name
                 )
+                # Only use future event if it's within today's local date
+                if future_set:
+                    future_set_local = future_set.astimezone(local_tz)
+                    if future_set_local.date() == today_local_date:
+                        today_set = future_set
+                        _LOGGER.debug("%s: Using future setting event %s for today", self.name, today_set)
             
             # === CALCULATE NEXT CHANGE TIME ===
             next_change = None

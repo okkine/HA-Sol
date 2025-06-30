@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 18:36:29"  # Fix binary sensor rising/setting attributes to use local midnight
+TEST_VERSION = "2025-06-29 18:52:29"  # Use today at midnight local time for rising/setting attributes
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"
