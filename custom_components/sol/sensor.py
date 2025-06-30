@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
+from homeassistant.helpers.event import async_track_time_change
 
 from .common import create_sensor_attributes, create_sun_helper
 
@@ -128,18 +129,27 @@ class SunElevationSensor(SensorEntity):
         if not hasattr(self, 'hass') or self.hass is None:
             return
         
-        # Calculate delay in seconds
-        delay_seconds = (update_time - dt_util.now()).total_seconds()
-        
         # Don't schedule if the time has already passed
-        if delay_seconds <= 0:
+        if update_time <= dt_util.now():
             _LOGGER.warning("Update time has already passed, scheduling immediate update")
-            delay_seconds = 1
+            # Schedule immediate update using async_track_time_change
+            self._unsub_update = async_track_time_change(
+                self.hass,
+                self._handle_scheduled_update,
+                second=0  # Update at the start of the next minute
+            )
+            return
         
-        # Schedule the next update using Home Assistant's async_call_later
+        # Schedule the next update using async_track_time_change
         try:
-            self._unsub_update = self.hass.async_call_later(delay_seconds, self._handle_scheduled_update)
-            _LOGGER.debug("Scheduled next update in %.1f seconds", delay_seconds)
+            self._unsub_update = async_track_time_change(
+                self.hass,
+                self._handle_scheduled_update,
+                hour=update_time.hour,
+                minute=update_time.minute,
+                second=update_time.second
+            )
+            _LOGGER.debug("Scheduled next update at %s", update_time.strftime("%H:%M:%S"))
         except Exception as e:
             _LOGGER.error("Failed to schedule update: %s", e)
             self._unsub_update = None
