@@ -432,18 +432,13 @@ class SunHelper:
             # Get initial elevation to determine if we need to advance to next day
             elev, _ = self.calculate_position(start_dt_utc, caller)
             
-            # Set observer date using just the date part (ephem handles timezone conversion automatically)
-            # Convert local date to UTC date - this automatically handles date boundary crossing
-            local_date = start_dt.date()  # Get just the date part from the input datetime
-            # Convert the local date to UTC date by creating a datetime at midnight local and converting to UTC
-            local_tz = start_dt.tzinfo if start_dt.tzinfo else timezone.utc
-            local_midnight = datetime.combine(local_date, time.min, tzinfo=local_tz)
-            utc_date = local_midnight.astimezone(timezone.utc).date()
+            # Convert full datetime to UTC first, then strip to date only for ephem
+            utc_date = start_dt_utc.date()
             observer.date = ephem.Date(utc_date)
             
             _LOGGER.debug(
-                "%s: Date conversion - start_dt=%s, local_date=%s, local_midnight=%s, utc_date=%s, observer_date=%s",
-                caller, start_dt, local_date, local_midnight, utc_date, observer.date
+                "%s: Date conversion - start_dt=%s, start_dt_utc=%s, utc_date=%s, observer_date=%s",
+                caller, start_dt, start_dt_utc, utc_date, observer.date
             )
             
             # Use ephem's built-in rise/set calculations
@@ -476,7 +471,7 @@ class SunHelper:
                             )
                             
                             # Check if it's within our search window
-                            end_dt = start_dt_utc + timedelta(days=search_days)
+                            end_dt = datetime.combine(utc_date + timedelta(days=search_days), time.max, tzinfo=timezone.utc)
                             if rise_dt <= end_dt:
                                 return rise_dt
                     else:  # setting
@@ -492,7 +487,7 @@ class SunHelper:
                             )
                             
                             # Check if it's within our search window
-                            end_dt = start_dt_utc + timedelta(days=search_days)
+                            end_dt = datetime.combine(utc_date + timedelta(days=search_days), time.max, tzinfo=timezone.utc)
                             if set_dt <= end_dt:
                                 return set_dt
                     
