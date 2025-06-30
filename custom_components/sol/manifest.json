@@ -8,7 +8,7 @@
   "ssdp": [],
   "zeroconf": [],
   "homekit": {},
-  "version": "0.0.000",
+  "version": "0.1.3",
   "config_flow": true,
   "iot_class": "local_polling"
 } 
