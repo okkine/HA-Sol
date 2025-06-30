@@ -5,7 +5,7 @@ DOMAIN = "sol"
 NAME = "Sol"
 
 # Update version to reflect sensor update fix
-TEST_VERSION = "2025-06-29 19:17:06"  # Fix solstice curve init, remove sun_direction, add midnight updates
+TEST_VERSION = "2025-06-29 19:28:57"  # Fix solstice curve to always use today's sunrise/sunset events
 
 CONF_BINARY_ELEVATION_SENSOR = "binary_elevation_sensor"
 CONF_RISING_ELEVATION = "rising_elevation"

@@ -66,6 +66,39 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             caller="init"
         )
         
+        # If no events today, search for future events (same logic as binary sensors)
+        if not todays_sunrise:
+            tomorrow_midnight_local = start_of_today_local + timedelta(days=1)
+            future_sunrise = sun_helper.get_time_at_elevation(
+                start_dt=tomorrow_midnight_local,
+                target_elev=0,
+                direction='rising',
+                max_days=365,
+                caller="init"
+            )
+            # Only use future event if it's within today's local date
+            if future_sunrise:
+                future_sunrise_local = future_sunrise.astimezone(dt_util.get_time_zone(hass.config.time_zone))
+                if future_sunrise_local.date() == now_local.date():
+                    todays_sunrise = future_sunrise
+                    _LOGGER.debug("Using future sunrise event for today: %s", todays_sunrise)
+        
+        if not todays_sunset:
+            tomorrow_midnight_local = start_of_today_local + timedelta(days=1)
+            future_sunset = sun_helper.get_time_at_elevation(
+                start_dt=tomorrow_midnight_local,
+                target_elev=0,
+                direction='setting',
+                max_days=365,
+                caller="init"
+            )
+            # Only use future event if it's within today's local date
+            if future_sunset:
+                future_sunset_local = future_sunset.astimezone(dt_util.get_time_zone(hass.config.time_zone))
+                if future_sunset_local.date() == now_local.date():
+                    todays_sunset = future_sunset
+                    _LOGGER.debug("Using future sunset event for today: %s", todays_sunset)
+        
         # Determine calculation time based on whether it's before or after noon
         if now_local.hour < 12:
             # Before noon: use today's sunrise
@@ -76,12 +109,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             calculation_time = todays_sunset
             event_type_used = "today's sunset"
         
-        # Fallback to current time only if we couldn't get either time
+        # If we couldn't get the appropriate event time, log an error but still try to calculate
         if not calculation_time:
-            _LOGGER.warning("Could not determine today's %s time, using current time", 
-                          "sunrise" if now_local.hour < 12 else "sunset")
-            calculation_time = now  # Already timezone-aware UTC
-            event_type_used = "current_time (fallback)"
+            _LOGGER.error("Could not determine today's %s time, but proceeding with calculation", 
+                         "sunrise" if now_local.hour < 12 else "sunset")
+            # Use the other event time as a fallback, or current time as last resort
+            if now_local.hour < 12 and todays_sunset:
+                calculation_time = todays_sunset
+                event_type_used = "today's sunset (fallback)"
+            elif now_local.hour >= 12 and todays_sunrise:
+                calculation_time = todays_sunrise
+                event_type_used = "today's sunrise (fallback)"
+            else:
+                # Last resort: use current time
+                calculation_time = now
+                event_type_used = "current_time (last resort)"
+                _LOGGER.error("No sunrise or sunset times available, using current time")
+        
+        # Add debug logging to understand what's happening
+        _LOGGER.debug(
+            "Solstice curve init - Local time: %s, sunrise: %s, sunset: %s, using: %s",
+            now_local, 
+            todays_sunrise.isoformat() if todays_sunrise else "None",
+            todays_sunset.isoformat() if todays_sunset else "None",
+            event_type_used
+        )
         
         # Calculate solstice curve at the determined calculation time
         normalized, prev_solstice, next_solstice = calculator.get_normalized_curve(date_time=calculation_time)
