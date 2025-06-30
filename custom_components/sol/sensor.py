@@ -6,7 +6,7 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
@@ -23,7 +23,10 @@ async def async_setup_entry(
     # Create SunHelper instance from config
     sun_helper = create_sun_helper(config_entry.data)
     
-    async_add_entities([SolSensor(), SunElevationSensor(sun_helper)], True)
+    # Get elevation step from config
+    elevation_step = config_entry.data.get("elevation_step", 1.0)
+    
+    async_add_entities([SolSensor(), SunElevationSensor(sun_helper, elevation_step)], True)
 
 
 class SolSensor(SensorEntity):
@@ -37,7 +40,7 @@ class SolSensor(SensorEntity):
         self._attr_name = sensor_name
         self._attr_unique_id = unique_id
         self._attr_native_value = "Unknown"
-        self._attr_icon = "mdi:solar-power"
+        self._attr_icon = "mdi:weather-sunny"
 
     @property
     def name(self) -> str:
@@ -59,7 +62,7 @@ class SolSensor(SensorEntity):
 class SunElevationSensor(SensorEntity):
     """Representation of a Sun Elevation sensor."""
 
-    def __init__(self, sun_helper) -> None:
+    def __init__(self, sun_helper, elevation_step) -> None:
         """Initialize the sensor."""
         # Use the common naming convention
         sensor_name, unique_id = create_sensor_attributes("Elevation")
@@ -67,11 +70,41 @@ class SunElevationSensor(SensorEntity):
         self._attr_name = sensor_name
         self._attr_unique_id = unique_id
         self._attr_native_value = "Unknown"
-        self._attr_icon = "mdi:solar-power"
-        self._attr_unit_of_measurement = "°"
+        self._attr_icon = "mdi:weather-sunny"
+        self._attr_native_unit_of_measurement = "°"
         
         # Store the sun helper for calculations
         self.sun_helper = sun_helper
+        self.elevation_step = elevation_step
+        
+        # Schedule tracking
+        self._unsub_update = None
+
+    @callback
+    def _schedule_update(self, update_time: datetime) -> None:
+        """Schedule the next update."""
+        # Cancel any existing scheduled update
+        if self._unsub_update:
+            self._unsub_update()
+            self._unsub_update = None
+        
+        # Schedule the next update
+        self._unsub_update = self.hass.helpers.event.async_call_later(
+            (update_time - dt_util.now()).total_seconds(),
+            self._handle_scheduled_update
+        )
+    
+    @callback
+    def _handle_scheduled_update(self, _now) -> None:
+        """Handle the scheduled update."""
+        self._unsub_update = None
+        self.async_schedule_update_ha_state(True)
+    
+    async def async_will_remove_from_hass(self) -> None:
+        """Cancel any scheduled updates when the sensor is removed."""
+        if self._unsub_update:
+            self._unsub_update()
+            self._unsub_update = None
 
     @property
     def name(self) -> str:
@@ -94,7 +127,16 @@ class SunElevationSensor(SensorEntity):
             "temperature_c": round(self.sun_helper.temperature, 1) if self.sun_helper.temperature is not None else None,
             "horizon_deg": round(self.sun_helper.horizon, 1) if self.sun_helper.horizon is not None else None,
             "calculation_time": getattr(self, '_calculation_time', None),
-            "azimuth_deg": getattr(self, '_azimuth', None),
+            "azimuth_deg": getattr(self, '_cur_azimuth', None),
+            "cur_elevation": getattr(self, '_cur_elevation', None),
+            "next_target_elevation": getattr(self, '_next_target_elevation', None),
+            "next_update_time": getattr(self, '_next_update_time', None),
+            "sun_direction": getattr(self, '_sun_direction', None),
+            "solar_noon": getattr(self, '_solar_noon', None),
+            "solar_midnight": getattr(self, '_solar_midnight', None),
+            "next_sunrise": getattr(self, '_next_sunrise', None),
+            "next_sunset": getattr(self, '_next_sunset', None),
+            "elevation_step": self.elevation_step,
         }
 
     async def async_update(self) -> None:
@@ -102,14 +144,38 @@ class SunElevationSensor(SensorEntity):
         try:
             # Get current local time with timezone
             current_time = dt_util.now()
-            azimuth, elevation = self.sun_helper.get_sun_position(current_time)
+            cur_azimuth, cur_elevation, solar_noon, solar_midnight, next_sunrise, next_sunset = self.sun_helper.get_sun_position(current_time)
+            
+            # Determine sun direction
+            sun_direction = self.sun_helper._get_sun_direction(current_time, solar_noon, solar_midnight)
+            
+            # Calculate next target elevation based on direction and step
+            if sun_direction == "rising":
+                next_target = (round(cur_elevation / self.elevation_step) * self.elevation_step) + self.elevation_step
+            else:
+                next_target = round(cur_elevation / self.elevation_step) * self.elevation_step - self.elevation_step
+            
+            # Get the time when sun reaches the next target elevation
+            next_rising_time, next_setting_time = self.sun_helper.get_time_at_elevation(next_target, current_time)
+            next_update_time = next_rising_time if sun_direction == "rising" else next_setting_time
             
             # Store calculation parameters for attributes
             self._calculation_time = current_time.isoformat()
-            self._azimuth = round(azimuth, 2)
+            self._cur_azimuth = round(cur_azimuth, 2)
+            self._sun_direction = sun_direction
+            self._cur_elevation = round(cur_elevation, 2)
+            self._next_target_elevation = round(next_target, 2)
+            self._next_update_time = next_update_time.isoformat()
+            self._solar_noon = solar_noon.isoformat()
+            self._solar_midnight = solar_midnight.isoformat()
+            self._next_sunrise = next_sunrise.isoformat()
+            self._next_sunset = next_sunset.isoformat()
             
             # Update sensor with current elevation
-            self._attr_native_value = round(elevation, 2)
+            self._attr_native_value = round(cur_elevation, 2)
+            
+            # Schedule the next update
+            self._schedule_update(next_update_time)
             
         except Exception as e:
             # Fallback to error state if calculation fails

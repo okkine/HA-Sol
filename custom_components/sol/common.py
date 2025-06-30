@@ -186,20 +186,21 @@ class SunHelper:
     
     def get_sun_position(self, 
                         local_time: datetime,
-                        use_center: bool = True) -> Tuple[float, float]:
+                        use_center: bool = True) -> Tuple[float, float, datetime, datetime, datetime, datetime]:
         """
-        Get the sun's azimuth and elevation at a specific local time.
+        Get the sun's azimuth and elevation at a specific local time, plus solar events.
         
         Args:
             local_time: Local system time (will be converted to UTC)
             use_center: Whether to use center of sun disk (default: True)
         
         Returns:
-            Tuple of (azimuth_degrees, elevation_degrees)
+            Tuple of (azimuth_degrees, elevation_degrees, solar_noon, solar_midnight, next_sunrise, next_sunset)
             
         Note:
             Azimuth is measured from North (0°) clockwise
             Elevation is measured from horizon (0°) to zenith (90°)
+            All times are returned as local datetimes
         """
         # Convert local time to UTC (ephem requires UTC)
         if local_time.tzinfo is None:
@@ -229,7 +230,161 @@ class SunHelper:
         azimuth_deg = float(ephem.degrees(azimuth_rad)) * 180.0 / ephem.pi
         elevation_deg = float(ephem.degrees(elevation_rad)) * 180.0 / ephem.pi
         
-        return azimuth_deg, elevation_deg
+        # Get solar events
+        solar_noon = self.observer.next_transit(sun)
+        solar_midnight = self.observer.next_antitransit(sun)
+        next_sunrise = self.observer.next_rising(sun)
+        next_sunset = self.observer.next_setting(sun)
+        
+        # Convert ephem dates to local datetime
+        solar_noon_local = ephem.to_timezone(solar_noon, timezone.utc).astimezone()
+        solar_midnight_local = ephem.to_timezone(solar_midnight, timezone.utc).astimezone()
+        next_sunrise_local = ephem.to_timezone(next_sunrise, timezone.utc).astimezone()
+        next_sunset_local = ephem.to_timezone(next_sunset, timezone.utc).astimezone()
+        
+        return azimuth_deg, elevation_deg, solar_noon_local, solar_midnight_local, next_sunrise_local, next_sunset_local
+
+    def _get_sun_direction(self, 
+                          current_time: datetime,
+                          solar_noon: datetime,
+                          solar_midnight: datetime) -> str:
+        """
+        Determine if the sun is currently rising or setting using the exact formula provided.
+        
+        Args:
+            current_time: Current local time
+            solar_noon: Next solar noon time (local datetime)
+            solar_midnight: Next solar midnight time (local datetime)
+        
+        Returns:
+            "rising" or "setting"
+        """
+        from datetime import timedelta
+        
+        cur_date = current_time.date()
+        ONE_DAY = timedelta(days=1)
+        
+        # Find the highest and lowest points on the elevation curve that encompass
+        # current time, where it is ok for the current time to be the same as the
+        # first of these two points.
+        # Note that the ephem solar_midnight event will always come before the ephem
+        # solar_noon event for any given date, even if it actually falls on the previous
+        # day.
+        hi_dttm = solar_noon
+        lo_dttm = solar_midnight
+        nxt_noon = solar_noon + ONE_DAY
+        
+        if current_time < lo_dttm:
+            # Get previous solar noon
+            prev_noon = solar_noon - ONE_DAY
+            tl_dttm = prev_noon
+            tr_dttm = lo_dttm
+        elif current_time < hi_dttm:
+            tl_dttm = lo_dttm
+            tr_dttm = hi_dttm
+        else:
+            # Get next solar midnight
+            nxt_midnight = solar_midnight + ONE_DAY
+            if current_time < nxt_midnight:
+                tl_dttm = hi_dttm
+                tr_dttm = nxt_midnight
+            else:
+                tl_dttm = nxt_midnight
+                tr_dttm = nxt_noon
+        
+        # Get elevations at the two time points
+        tl_elev = self._get_elevation_at_time(tl_dttm)
+        tr_elev = self._get_elevation_at_time(tr_dttm)
+        
+        rising = tr_elev > tl_elev
+        return "rising" if rising else "setting"
+    
+    def _get_elevation_at_time(self, local_time: datetime) -> float:
+        """
+        Get the sun's elevation at a specific local time.
+        
+        Args:
+            local_time: Local system time
+        
+        Returns:
+            Elevation in degrees
+        """
+        # Convert local time to UTC (ephem requires UTC)
+        if local_time.tzinfo is None:
+            # If no timezone info, assume it's already UTC
+            utc_time = local_time
+        else:
+            # Convert to UTC and remove timezone info for ephem
+            utc_time = local_time.astimezone(timezone.utc).replace(tzinfo=None)
+        
+        # Set the observer's date to the UTC time
+        self.observer.date = utc_time
+        
+        # Calculate sun position
+        sun = ephem.Sun()
+        sun.compute(self.observer)
+        
+        # Get elevation and convert from radians to degrees
+        elevation_rad = sun.alt
+        elevation_deg = float(ephem.degrees(elevation_rad)) * 180.0 / ephem.pi
+        
+        return elevation_deg
+
+    def get_time_at_elevation(self,
+                             target_elevation: float,
+                             local_time: datetime) -> Tuple[datetime, datetime]:
+        """
+        Get the next rising and setting times when the sun reaches a specific elevation.
+        
+        Args:
+            target_elevation: Target elevation in degrees (negative for below horizon)
+            local_time: Local system time to start calculation from
+        
+        Returns:
+            Tuple of (next_rising_time, next_setting_time) as local datetimes
+            
+        Note:
+            Uses ephem's next_rising and next_setting methods with custom horizon
+        """
+        # Convert local time to UTC (ephem requires UTC)
+        if local_time.tzinfo is None:
+            # If no timezone info, assume it's already UTC
+            utc_time = local_time
+        else:
+            # Convert to UTC and remove timezone info for ephem
+            utc_time = local_time.astimezone(timezone.utc).replace(tzinfo=None)
+        
+        # Store original horizon setting
+        original_horizon = self.observer.horizon
+        
+        # Set the target elevation as the horizon
+        self.observer.horizon = str(target_elevation)
+        self.observer.date = utc_time
+        
+        # Calculate sun position
+        sun = ephem.Sun()
+        
+        try:
+            # Get next rising time
+            next_rising = self.observer.next_rising(sun)
+            
+            # Get next setting time
+            next_setting = self.observer.next_setting(sun)
+            
+            # Convert ephem dates back to Python datetime
+            # ephem dates are in UTC
+            utc_rising = ephem.to_timezone(next_rising, timezone.utc)
+            utc_setting = ephem.to_timezone(next_setting, timezone.utc)
+            
+            # Convert back to local time
+            local_rising = utc_rising.astimezone()
+            local_setting = utc_setting.astimezone()
+            
+            return local_rising, local_setting
+            
+        finally:
+            # Restore original horizon setting
+            self.observer.horizon = original_horizon
 
 
 # Example usage:

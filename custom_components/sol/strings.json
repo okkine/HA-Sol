@@ -13,7 +13,8 @@
           "pressure_mode": "Pressure Mode",
           "pressure": "Pressure (mBar)",
           "temperature": "Temperature (°C)",
-          "horizon": "Horizon offset (°)"
+          "horizon": "Horizon offset (°)",
+          "elevation_step": "Elevation Step (°)"
         },
         "description": "Configure your location and atmospheric parameters for accurate sun position calculations. Choose whether to use system defaults or manual settings for location and pressure.",
         "title": "Sol Configuration"

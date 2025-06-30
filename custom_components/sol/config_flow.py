@@ -37,17 +37,18 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=vol.Schema(
                     {
                         vol.Required("location_mode", default="system"): vol.In(["system", "manual"]),
-                        vol.Optional("latitude", description=f"System default: {system_lat}°"): vol.Coerce(float),
-                        vol.Optional("longitude", description=f"System default: {system_lon}°"): vol.Coerce(float),
-                        vol.Optional("elevation", description=f"System default: {system_elevation}m"): vol.Coerce(float),
+                        vol.Optional("latitude", description=f"System default: {system_lat}° (not used when Location Mode = System)"): vol.Coerce(float),
+                        vol.Optional("longitude", description=f"System default: {system_lon}° (not used when Location Mode = System)"): vol.Coerce(float),
+                        vol.Optional("elevation", description=f"System default: {system_elevation}m (not used when Location Mode = System)"): vol.Coerce(float),
                         vol.Required("pressure_mode", default="auto"): vol.In(["auto", "manual"]),
-                        vol.Optional("pressure", description="Not used in auto mode"): vol.Coerce(float),
+                        vol.Optional("pressure", description="Not used when Pressure Mode = Auto"): vol.Coerce(float),
                         vol.Optional("temperature", default=20.0): vol.Coerce(float),
                         vol.Optional("horizon", default=0.0): vol.Coerce(float),
+                        vol.Optional("elevation_step", default=1.0): vol.Coerce(float),
                     }
                 ),
                 description_placeholders={
-                    "note": "Choose whether to use system defaults or manual settings for location and pressure."
+                    "note": "Choose whether to use system defaults or manual settings for location and pressure. Fields marked as 'not used' will be ignored when the corresponding mode is set to System/Auto."
                 }
             )
 
@@ -76,18 +77,19 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=vol.Schema(
                     {
                         vol.Required("location_mode", default=user_input.get("location_mode", "system")): vol.In(["system", "manual"]),
-                        vol.Optional("latitude", default=user_input.get("latitude"), description=f"System default: {system_lat}°"): vol.Coerce(float),
-                        vol.Optional("longitude", default=user_input.get("longitude"), description=f"System default: {system_lon}°"): vol.Coerce(float),
-                        vol.Optional("elevation", default=user_input.get("elevation"), description=f"System default: {system_elevation}m"): vol.Coerce(float),
+                        vol.Optional("latitude", default=user_input.get("latitude"), description=f"System default: {system_lat}° (not used when Location Mode = System)"): vol.Coerce(float),
+                        vol.Optional("longitude", default=user_input.get("longitude"), description=f"System default: {system_lon}° (not used when Location Mode = System)"): vol.Coerce(float),
+                        vol.Optional("elevation", default=user_input.get("elevation"), description=f"System default: {system_elevation}m (not used when Location Mode = System)"): vol.Coerce(float),
                         vol.Required("pressure_mode", default=user_input.get("pressure_mode", "auto")): vol.In(["auto", "manual"]),
-                        vol.Optional("pressure", default=user_input.get("pressure"), description="Not used in auto mode"): vol.Coerce(float),
+                        vol.Optional("pressure", default=user_input.get("pressure"), description="Not used when Pressure Mode = Auto"): vol.Coerce(float),
                         vol.Optional("temperature", default=user_input.get("temperature", 20.0)): vol.Coerce(float),
                         vol.Optional("horizon", default=user_input.get("horizon", 0.0)): vol.Coerce(float),
+                        vol.Optional("elevation_step", default=user_input.get("elevation_step", 1.0)): vol.Coerce(float),
                     }
                 ),
                 errors=errors,
                 description_placeholders={
-                    "note": "Choose whether to use system defaults or manual settings for location and pressure."
+                    "note": "Choose whether to use system defaults or manual settings for location and pressure. Fields marked as 'not used' will be ignored when the corresponding mode is set to System/Auto."
                 }
             )
 
@@ -101,6 +103,7 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "pressure": user_input.get("pressure") if user_input.get("pressure_mode") == "manual" else None,
             "temperature": user_input.get("temperature", 20.0),
             "horizon": user_input.get("horizon", 0.0),
+            "elevation_step": user_input.get("elevation_step", 1.0),
         }
 
         return self.async_create_entry(title=NAME, data=info)
