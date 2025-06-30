@@ -226,7 +226,7 @@ class SunElevationSensor(BaseSolSensor):
 
             # Calculate next target elevation based on direction and step
             if sun_direction == "rising":
-                next_target = round(cur_elevation / self.elevation_step) * self.elevation_step + self.elevation_step
+                next_target = (round(cur_elevation / self.elevation_step) * self.elevation_step) + self.elevation_step
             else:
                 next_target = (round(cur_elevation / self.elevation_step) * self.elevation_step) - self.elevation_step
             
@@ -237,7 +237,7 @@ class SunElevationSensor(BaseSolSensor):
             next_target = max(min(next_target, 90), -90)
             
             # Get the time when sun reaches the next target elevation
-            next_rising_time, next_setting_time = self.sun_helper.get_time_at_elevation(next_target, now)
+            next_rising_time, next_setting_time = self.sun_helper.get_time_at_elevation(next_target, now, use_center=True)
             event_time = next_rising_time if sun_direction == "rising" else next_setting_time
             
             # Fallback to next solar event if needed

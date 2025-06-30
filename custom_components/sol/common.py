@@ -332,13 +332,15 @@ class SunHelper:
 
     def get_time_at_elevation(self,
                              target_elevation: float,
-                             local_time: datetime) -> Tuple[datetime, datetime]:
+                             local_time: datetime,
+                             use_center: bool = True) -> Tuple[datetime, datetime]:
         """
         Get the next rising and setting times when the sun reaches a specific elevation.
         
         Args:
             target_elevation: Target elevation in degrees (negative for below horizon)
             local_time: Local system time to start calculation from
+            use_center: Whether to use center of sun disk (default: True)
         
         Returns:
             Tuple of (next_rising_time, next_setting_time) as local datetimes
@@ -366,10 +368,10 @@ class SunHelper:
         
         try:
             # Get next rising time
-            next_rising = self.observer.next_rising(sun)
+            next_rising = self.observer.next_rising(sun, use_center=use_center)
             
             # Get next setting time
-            next_setting = self.observer.next_setting(sun)
+            next_setting = self.observer.next_setting(sun, use_center=use_center)
             
             # Convert ephem dates back to Python datetime
             # ephem dates are in UTC
