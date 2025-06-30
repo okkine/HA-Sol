@@ -1,6 +1,7 @@
 """Sol sensor platform."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -12,6 +13,8 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 
 from .common import create_sensor_attributes, create_sun_helper
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -87,6 +90,10 @@ class SunElevationSensor(SensorEntity):
         if self._unsub_update:
             self._unsub_update()
             self._unsub_update = None
+        
+        # Only schedule if hass is available
+        if not hasattr(self, 'hass') or self.hass is None:
+            return
         
         # Schedule the next update
         self._unsub_update = self.hass.helpers.event.async_call_later(
@@ -179,5 +186,6 @@ class SunElevationSensor(SensorEntity):
             
         except Exception as e:
             # Fallback to error state if calculation fails
-            self._attr_native_value = "Error"
+            _LOGGER.error("Error updating Sol elevation sensor: %s", e)
+            self._attr_native_value = None
             self._attr_icon = "mdi:alert" 
