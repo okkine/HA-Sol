@@ -7,7 +7,7 @@ A custom Home Assistant integration for accurate sun position calculations using
 ## Features
 
 - **Accurate Sun Position**: Calculate azimuth and elevation using ephem library
-- **Automatic Pressure Calculation**: Uses pyatmos to calculate atmospheric pressure from elevation
+- **Automatic Pressure Calculation**: Uses ambiance library to calculate atmospheric pressure from elevation
 - **User Configurable**: Customize location, elevation, temperature, and atmospheric conditions
 - **Multiple Sensors**: Extensible sensor platform for various sun-related measurements
 - **Consistent Naming**: Automatic naming conventions for all sensors and input entities
@@ -56,7 +56,7 @@ The integration requires minimal configuration:
 ## Dependencies
 
 - **ephem**: Astronomical calculations
-- **pyatmos**: Atmospheric pressure calculations
+- **ambiance**: Atmospheric pressure calculations (lightweight, no compilation required)
 - **python-slugify**: Clean entity naming
 
 ## Development

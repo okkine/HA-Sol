@@ -4,7 +4,13 @@ from typing import Optional, Tuple
 from datetime import datetime
 from slugify import slugify
 import ephem
-import pyatmos
+import math
+
+try:
+    import ambiance
+    AMBIANCE_AVAILABLE = True
+except ImportError:
+    AMBIANCE_AVAILABLE = False
 
 from .const import DOMAIN, NAME
 
@@ -62,29 +68,40 @@ def create_input_entity_attributes(sensor_name: str, config_variable: str) -> tu
 
 def calculate_pressure_from_elevation(elevation_meters: float) -> float:
     """
-    Calculate atmospheric pressure from elevation using pyatmos.
+    Calculate atmospheric pressure from elevation using the ambiance library.
     
     Args:
         elevation_meters: Elevation in meters above sea level
     
     Returns:
         Atmospheric pressure in mBar
+        
+    Note:
+        Uses the International Standard Atmosphere (ISA) model via ambiance library.
+        Falls back to simplified calculation if ambiance is not available.
     """
-    try:
-        # Use pyatmos to calculate pressure at given elevation
-        # Assuming standard atmospheric conditions (15°C, 0% humidity)
-        pressure_pa = pyatmos.atmospheric_pressure(elevation_meters)
-        
-        # Convert from Pa to mBar (1 mBar = 100 Pa)
-        pressure_mbar = pressure_pa / 100.0
-        
-        return pressure_mbar
-    except Exception as e:
-        # Fallback to standard atmospheric pressure if calculation fails
-        # This is a simplified calculation: P = P0 * exp(-elevation/7400)
-        # where P0 = 1013.25 mBar (standard sea level pressure)
-        pressure_mbar = 1013.25 * (2.71828 ** (-elevation_meters / 7400))
-        return pressure_mbar
+    if AMBIANCE_AVAILABLE:
+        try:
+            # Use ambiance library for accurate pressure calculation
+            # ambiance.atmosphere() returns pressure in Pa, convert to mBar
+            pressure_pa = ambiance.atmosphere(elevation_meters).pressure
+            pressure_mbar = pressure_pa / 100.0
+            return pressure_mbar
+        except Exception:
+            # Fall back to simplified calculation if ambiance fails
+            pass
+    
+    # Fallback to simplified ISA model
+    # Standard atmospheric pressure at sea level (mBar)
+    P0 = 1013.25
+    
+    # Scale height for Earth's atmosphere (meters)
+    H = 7400
+    
+    # Calculate pressure using exponential decay model
+    pressure_mbar = P0 * math.exp(-elevation_meters / H)
+    
+    return pressure_mbar
 
 
 def create_sun_helper(config_data: dict) -> 'SunHelper':
