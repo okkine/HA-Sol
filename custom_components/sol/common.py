@@ -172,6 +172,10 @@ class SunHelper:
         if horizon is not None:
             self.observer.horizon = str(horizon)
         
+        # Set additional parameters for more accurate calculations
+        self.observer.epoch = ephem.J2000  # Use J2000 epoch
+        self.observer.compute_pressure()  # Enable pressure calculations
+        
         # Store parameters for reference
         self.latitude = latitude
         self.longitude = longitude

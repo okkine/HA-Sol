@@ -87,12 +87,12 @@ class SunElevationSensor(SensorEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return entity specific state attributes."""
         return {
-            "latitude": self.sun_helper.latitude,
-            "longitude": self.sun_helper.longitude,
-            "elevation_m": self.sun_helper.elevation,
-            "pressure_mbar": self.sun_helper.pressure,
-            "temperature_c": self.sun_helper.temperature,
-            "horizon_deg": self.sun_helper.horizon,
+            "latitude": str(self.sun_helper.latitude) if self.sun_helper.latitude is not None else None,
+            "longitude": str(self.sun_helper.longitude) if self.sun_helper.longitude is not None else None,
+            "elevation_m": round(self.sun_helper.elevation, 1) if self.sun_helper.elevation is not None else None,
+            "pressure_mbar": round(self.sun_helper.pressure, 1) if self.sun_helper.pressure is not None else None,
+            "temperature_c": round(self.sun_helper.temperature, 1) if self.sun_helper.temperature is not None else None,
+            "horizon_deg": round(self.sun_helper.horizon, 1) if self.sun_helper.horizon is not None else None,
             "calculation_time": getattr(self, '_calculation_time', None),
             "azimuth_deg": getattr(self, '_azimuth', None),
         }
