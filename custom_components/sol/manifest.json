@@ -1,0 +1,14 @@
+{
+  "domain": "sol",
+  "name": "Sol",
+  "documentation": "https://github.com/your-username/ha-sol",
+  "dependencies": [],
+  "codeowners": ["@your-username"],
+  "requirements": ["python-slugify", "ephem", "pyatmos"],
+  "ssdp": [],
+  "zeroconf": [],
+  "homekit": {},
+  "version": "1.0.0",
+  "config_flow": true,
+  "iot_class": "local_polling"
+} 

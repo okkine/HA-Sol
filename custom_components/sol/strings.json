@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "name": "Name",
+          "host": "Host",
+          "port": "Port",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "elevation": "Elevation (meters)",
+          "pressure_mode": "Pressure Mode",
+          "pressure": "Pressure (mBar)",
+          "temperature": "Temperature (°C)",
+          "horizon": "Horizon offset (°)"
+        },
+        "description": "Configure your location and atmospheric parameters for accurate sun position calculations. Leave latitude and longitude empty to use system defaults. Pressure can be calculated automatically from elevation or set manually.",
+        "title": "Sol Configuration"
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication",
+      "invalid_coordinates": "Invalid coordinates. Latitude must be between -90 and 90, longitude between -180 and 180.",
+      "pressure_required": "Pressure value is required when manual mode is selected.",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  }
+} 
