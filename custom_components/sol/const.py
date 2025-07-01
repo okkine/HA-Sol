@@ -6,7 +6,7 @@ DOMAIN: Final = "sol"
 NAME = "Sol"
 
 # Version
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 # Defaults
 DEFAULT_NAME = "Sol"
