@@ -450,28 +450,27 @@ class SunHelper:
             # Move to next hour
             current_time += search_increment
         
-        # Convert back to local time
+        # Refine with precise search if requested
         if calc_max and max_time is not None:
-            max_time_local = max_time.astimezone()
+            max_time_local, max_elevation_precise = self.find_extremum_precise(max_time.astimezone(), is_maximum=True)
         else:
             max_time_local = None
-            max_elevation = None
-        
+            max_elevation_precise = None
         if calc_min and min_time is not None:
-            min_time_local = min_time.astimezone()
+            min_time_local, min_elevation_precise = self.find_extremum_precise(min_time.astimezone(), is_maximum=False)
         else:
             min_time_local = None
-            min_elevation = None
+            min_elevation_precise = None
         
         logger.debug(
-            "Found max elevation %s at %s, min elevation %s at %s",
-            f"{max_elevation:.2f}" if max_elevation is not None else "None",
+            "Found max elevation %s at %s, min elevation %s at %s (precise)",
+            f"{max_elevation_precise:.2f}" if max_elevation_precise is not None else "None",
             max_time_local,
-            f"{min_elevation:.2f}" if min_elevation is not None else "None",
+            f"{min_elevation_precise:.2f}" if min_elevation_precise is not None else "None",
             min_time_local
         )
         
-        return max_time_local, max_elevation, min_time_local, min_elevation
+        return max_time_local, max_elevation_precise, min_time_local, min_elevation_precise
 
     def find_extremum_precise(self, 
                              start_time: datetime,
