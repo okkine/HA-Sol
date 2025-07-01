@@ -33,13 +33,15 @@ async def async_setup_entry(
     
     # Get elevation step from config
     elevation_step = config_entry.data.get("elevation_step", 1.0)
+    enable_max_elevation = config_entry.data.get("enable_max_elevation", False)
+    enable_min_elevation = config_entry.data.get("enable_min_elevation", False)
     
-    # Create sensor list - always include all sensors
+    # Create sensor list - always include all sensors, but set enabled_default per config
     sensors = [
-        SolSensor(), 
+        SolSensor(),
         SunElevationSensor(sun_helper, elevation_step),
-        SunMaximumElevationSensor(sun_helper),
-        SunMinimumElevationSensor(sun_helper)
+        SunMaximumElevationSensor(sun_helper, enabled_default=enable_max_elevation),
+        SunMinimumElevationSensor(sun_helper, enabled_default=enable_min_elevation)
     ]
     
     _LOGGER.info("Total sensors to add: %d", len(sensors))
@@ -277,24 +279,35 @@ class SunElevationSensor(BaseSolSensor):
             
             # Fallback to next solar event if needed
             if not event_time:
-                # Use sun position calculator parameters for observer
-                import ephem
-                from datetime import timezone
-                now_utc = now.astimezone(timezone.utc).replace(tzinfo=None)
-                observer = ephem.Observer()
-                observer.lat = str(self.sun_helper.latitude)
-                observer.lon = str(self.sun_helper.longitude)
-                observer.elevation = self.sun_helper.elevation
-                observer.pressure = self.sun_helper.pressure
-                observer.temp = self.sun_helper.temperature
-                observer.date = ephem.Date(now_utc)
-                sun = ephem.Sun()
-                try:
-                    event_time = observer.next_transit(sun).datetime().replace(tzinfo=timezone.utc)
-                    _LOGGER.debug("Using fallback solar event at %s", event_time)
-                except Exception:
-                    event_time = now + timedelta(minutes=5)
-                    _LOGGER.debug("Using emergency fallback update at %s", event_time)
+                # If rising, use next max elevation; if setting, use next min elevation
+                if sun_direction == "rising":
+                    max_time, _, _, _ = self.sun_helper.get_max_min_elevations(now, calc_max=True, calc_min=False)
+                    event_time = max_time
+                    _LOGGER.debug("Fallback to next max elevation at %s", event_time)
+                else:
+                    _, _, min_time, _ = self.sun_helper.get_max_min_elevations(now, calc_max=False, calc_min=True)
+                    event_time = min_time
+                    _LOGGER.debug("Fallback to next min elevation at %s", event_time)
+
+                # If still no event_time, fallback to solar event
+                if not event_time:
+                    import ephem
+                    from datetime import timezone
+                    now_utc = now.astimezone(timezone.utc).replace(tzinfo=None)
+                    observer = ephem.Observer()
+                    observer.lat = str(self.sun_helper.latitude)
+                    observer.lon = str(self.sun_helper.longitude)
+                    observer.elevation = self.sun_helper.elevation
+                    observer.pressure = self.sun_helper.pressure
+                    observer.temp = self.sun_helper.temperature
+                    observer.date = ephem.Date(now_utc)
+                    sun = ephem.Sun()
+                    try:
+                        event_time = observer.next_transit(sun).datetime().replace(tzinfo=timezone.utc)
+                        _LOGGER.debug("Using fallback solar event at %s", event_time)
+                    except Exception:
+                        event_time = now + timedelta(minutes=5)
+                        _LOGGER.debug("Using emergency fallback update at %s", event_time)
             
             _LOGGER.debug(
                 "Current: %.2f° (azimuth: %.2f°), Direction: %s, Target: %.2f°",
@@ -314,20 +327,14 @@ class SunElevationSensor(BaseSolSensor):
 class SunMaximumElevationSensor(BaseSolSensor):
     """Representation of a Sun Maximum Elevation sensor."""
 
-    entity_registry_enabled_default = False
-
-    def __init__(self, sun_helper) -> None:
+    def __init__(self, sun_helper, enabled_default=False) -> None:
         """Initialize the sensor."""
         # Initialize base entity
         super().__init__("Maximum Elevation", "max_elevation", "Sol")
-        
+        self.entity_registry_enabled_default = enabled_default
         self._attr_icon = "mdi:weather-sunny"
         self._attr_native_unit_of_measurement = "°"
-        
-        # Store the sun helper for calculations
         self.sun_helper = sun_helper
-        
-        # State tracking
         self._max_time = None
         self._max_elevation = None
 
@@ -349,54 +356,36 @@ class SunMaximumElevationSensor(BaseSolSensor):
 
     async def _async_update_logic(self, now):
         """Sensor-specific update logic."""
-        now = now or dt_util.utcnow()
+        # Always use midnight today (system time) as the reference for first update
+        if now is None:
+            now = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
         _LOGGER.debug("Maximum elevation sensor update triggered at %s", now)
-        
         try:
-            # Get maximum and minimum elevations for the next day
-            max_time, max_elevation, min_time, min_elevation = self.sun_helper.get_max_min_elevations(now, days_ahead=1)
-            
-            # Update state values
-            self._attr_native_value = round(max_elevation, 2)
-            self._attr_available = True
-            
-            # Store attributes
-            self._max_time = max_time.isoformat()
-            self._max_elevation = round(max_elevation, 2)
-            
-            _LOGGER.debug(
-                "Maximum elevation: %.2f° at %s",
-                max_elevation, max_time
-            )
-            
-            # Schedule next update at noon tomorrow (local time)
+            max_time, max_elevation, _, _ = self.sun_helper.get_max_min_elevations(now, days_ahead=1, calc_max=True, calc_min=False)
+            self._attr_native_value = round(max_elevation, 2) if max_elevation is not None else None
+            self._attr_available = True if max_elevation is not None else False
+            self._max_time = max_time.isoformat() if max_time is not None else None
+            self._max_elevation = round(max_elevation, 2) if max_elevation is not None else None
+            _LOGGER.debug("Maximum elevation: %s° at %s", max_elevation, max_time)
             tomorrow = now.replace(hour=12, minute=0, second=0, microsecond=0) + timedelta(days=1)
             return tomorrow
-            
         except Exception as e:
             _LOGGER.error("Error updating maximum elevation sensor: %s", e, exc_info=True)
             self._attr_native_value = None
             self._attr_icon = "mdi:alert"
-            return now + timedelta(minutes=5)  # Retry in 5 minutes
+            return now + timedelta(minutes=5)
 
 
 class SunMinimumElevationSensor(BaseSolSensor):
     """Representation of a Sun Minimum Elevation sensor."""
 
-    entity_registry_enabled_default = False
-
-    def __init__(self, sun_helper) -> None:
+    def __init__(self, sun_helper, enabled_default=False) -> None:
         """Initialize the sensor."""
-        # Initialize base entity
         super().__init__("Minimum Elevation", "min_elevation", "Sol")
-        
+        self.entity_registry_enabled_default = enabled_default
         self._attr_icon = "mdi:weather-night"
         self._attr_native_unit_of_measurement = "°"
-        
-        # Store the sun helper for calculations
         self.sun_helper = sun_helper
-        
-        # State tracking
         self._min_time = None
         self._min_elevation = None
 
@@ -418,32 +407,21 @@ class SunMinimumElevationSensor(BaseSolSensor):
 
     async def _async_update_logic(self, now):
         """Sensor-specific update logic."""
-        now = now or dt_util.utcnow()
+        # Always use midnight today (system time) as the reference for first update
+        if now is None:
+            now = dt_util.now().replace(hour=0, minute=0, second=0, microsecond=0)
         _LOGGER.debug("Minimum elevation sensor update triggered at %s", now)
-        
         try:
-            # Get maximum and minimum elevations for the next day
-            max_time, max_elevation, min_time, min_elevation = self.sun_helper.get_max_min_elevations(now, days_ahead=1)
-            
-            # Update state values
-            self._attr_native_value = round(min_elevation, 2)
-            self._attr_available = True
-            
-            # Store attributes
-            self._min_time = min_time.isoformat()
-            self._min_elevation = round(min_elevation, 2)
-            
-            _LOGGER.debug(
-                "Minimum elevation: %.2f° at %s",
-                min_elevation, min_time
-            )
-            
-            # Schedule next update at midnight tomorrow (local time)
+            _, _, min_time, min_elevation = self.sun_helper.get_max_min_elevations(now, days_ahead=1, calc_max=False, calc_min=True)
+            self._attr_native_value = round(min_elevation, 2) if min_elevation is not None else None
+            self._attr_available = True if min_elevation is not None else False
+            self._min_time = min_time.isoformat() if min_time is not None else None
+            self._min_elevation = round(min_elevation, 2) if min_elevation is not None else None
+            _LOGGER.debug("Minimum elevation: %s° at %s", min_elevation, min_time)
             tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
             return tomorrow
-            
         except Exception as e:
             _LOGGER.error("Error updating minimum elevation sensor: %s", e, exc_info=True)
             self._attr_native_value = None
             self._attr_icon = "mdi:alert"
-            return now + timedelta(minutes=5)  # Retry in 5 minutes 
+            return now + timedelta(minutes=5) 

@@ -391,20 +391,20 @@ class SunHelper:
 
     def get_max_min_elevations(self, 
                               start_time: datetime,
-                              days_ahead: int = 1) -> Tuple[datetime, float, datetime, float]:
+                              days_ahead: int = 1,
+                              calc_max: bool = True,
+                              calc_min: bool = True) -> Tuple[Optional[datetime], Optional[float], Optional[datetime], Optional[float]]:
         """
-        Get the exact times and elevations of maximum and minimum sun elevation.
+        Get the exact times and elevations of maximum and/or minimum sun elevation.
         
         Args:
             start_time: Local system time to start calculation from
             days_ahead: Number of days to search ahead (default: 1)
+            calc_max: Whether to calculate the maximum elevation (default: True)
+            calc_min: Whether to calculate the minimum elevation (default: True)
         
         Returns:
-            Tuple of (max_time, max_elevation, min_time, min_elevation) as local datetimes
-            
-        Note:
-            Uses iterative search with 1-hour increments to find true extrema.
-            More accurate than solar noon/midnight for true maximum/minimum elevations.
+            Tuple of (max_time, max_elevation, min_time, min_elevation) as local datetimes or None if not calculated
         """
         from datetime import timedelta
         
@@ -435,12 +435,12 @@ class SunHelper:
                 elevation = self._get_elevation_at_time(current_time)
                 
                 # Track maximum
-                if elevation > max_elevation:
+                if calc_max and elevation > max_elevation:
                     max_elevation = elevation
                     max_time = current_time
                 
                 # Track minimum
-                if elevation < min_elevation:
+                if calc_min and elevation < min_elevation:
                     min_elevation = elevation
                     min_time = current_time
                     
@@ -451,19 +451,24 @@ class SunHelper:
             current_time += search_increment
         
         # Convert back to local time
-        if max_time is not None:
+        if calc_max and max_time is not None:
             max_time_local = max_time.astimezone()
         else:
-            max_time_local = start_time
-            
-        if min_time is not None:
+            max_time_local = None
+            max_elevation = None
+        
+        if calc_min and min_time is not None:
             min_time_local = min_time.astimezone()
         else:
-            min_time_local = start_time
+            min_time_local = None
+            min_elevation = None
         
         logger.debug(
-            "Found max elevation %.2f° at %s, min elevation %.2f° at %s",
-            max_elevation, max_time_local, min_elevation, min_time_local
+            "Found max elevation %s at %s, min elevation %s at %s",
+            f"{max_elevation:.2f}" if max_elevation is not None else "None",
+            max_time_local,
+            f"{min_elevation:.2f}" if min_elevation is not None else "None",
+            min_time_local
         )
         
         return max_time_local, max_elevation, min_time_local, min_elevation
