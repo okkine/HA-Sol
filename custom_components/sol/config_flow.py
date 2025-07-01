@@ -45,8 +45,6 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Optional("temperature", default=20.0): vol.Coerce(float),
                         vol.Optional("horizon", default=0.0): vol.Coerce(float),
                         vol.Optional("elevation_step", default=1.0): vol.Coerce(float),
-                        vol.Required("enable_max_elevation", default=False): bool,
-                        vol.Required("enable_min_elevation", default=False): bool,
                     }
                 ),
                 description_placeholders={
@@ -87,8 +85,6 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Optional("temperature", default=user_input.get("temperature", 20.0)): vol.Coerce(float),
                         vol.Optional("horizon", default=user_input.get("horizon", 0.0)): vol.Coerce(float),
                         vol.Optional("elevation_step", default=user_input.get("elevation_step", 1.0)): vol.Coerce(float),
-                        vol.Required("enable_max_elevation", default=user_input.get("enable_max_elevation", False)): bool,
-                        vol.Required("enable_min_elevation", default=user_input.get("enable_min_elevation", False)): bool,
                     }
                 ),
                 errors=errors,
@@ -108,8 +104,6 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "temperature": user_input.get("temperature", 20.0),
             "horizon": user_input.get("horizon", 0.0),
             "elevation_step": user_input.get("elevation_step", 1.0),
-            "enable_max_elevation": user_input.get("enable_max_elevation", False),
-            "enable_min_elevation": user_input.get("enable_min_elevation", False),
         }
 
         return self.async_create_entry(title=NAME, data=info)

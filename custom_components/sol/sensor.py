@@ -34,18 +34,12 @@ async def async_setup_entry(
     # Get elevation step from config
     elevation_step = config_entry.data.get("elevation_step", 1.0)
     
-    # Get sensor enable flags from config
-    enable_max_elevation = config_entry.data.get("enable_max_elevation", False)
-    enable_min_elevation = config_entry.data.get("enable_min_elevation", False)
-    
-    _LOGGER.info("Sensor enable flags - Max: %s, Min: %s", enable_max_elevation, enable_min_elevation)
-    
     # Create sensor list - always include all sensors
     sensors = [
         SolSensor(), 
         SunElevationSensor(sun_helper, elevation_step),
-        SunMaximumElevationSensor(sun_helper, enabled=enable_max_elevation),
-        SunMinimumElevationSensor(sun_helper, enabled=enable_min_elevation)
+        SunMaximumElevationSensor(sun_helper),
+        SunMinimumElevationSensor(sun_helper)
     ]
     
     _LOGGER.info("Total sensors to add: %d", len(sensors))
@@ -320,7 +314,9 @@ class SunElevationSensor(BaseSolSensor):
 class SunMaximumElevationSensor(BaseSolSensor):
     """Representation of a Sun Maximum Elevation sensor."""
 
-    def __init__(self, sun_helper, enabled=False) -> None:
+    entity_registry_enabled_default = False
+
+    def __init__(self, sun_helper) -> None:
         """Initialize the sensor."""
         # Initialize base entity
         super().__init__("Maximum Elevation", "max_elevation", "Sol")
@@ -334,7 +330,6 @@ class SunMaximumElevationSensor(BaseSolSensor):
         # State tracking
         self._max_time = None
         self._max_elevation = None
-        self._enabled = enabled
 
     @property
     def native_value(self) -> StateType:
@@ -354,12 +349,6 @@ class SunMaximumElevationSensor(BaseSolSensor):
 
     async def _async_update_logic(self, now):
         """Sensor-specific update logic."""
-        # If not enabled, stay unavailable
-        if not self._enabled:
-            self._attr_available = False
-            self._attr_native_value = None
-            return None  # Don't schedule updates when disabled
-        
         now = now or dt_util.utcnow()
         _LOGGER.debug("Maximum elevation sensor update triggered at %s", now)
         
@@ -390,31 +379,13 @@ class SunMaximumElevationSensor(BaseSolSensor):
             self._attr_icon = "mdi:alert"
             return now + timedelta(minutes=5)  # Retry in 5 minutes
 
-    def set_enabled(self, enabled: bool):
-        """Enable or disable the sensor."""
-        if self._enabled != enabled:
-            self._enabled = enabled
-            if enabled:
-                # Trigger an immediate update when enabled
-                self.hass.async_create_task(self.async_update())
-            else:
-                # Clear state when disabled
-                self._attr_available = False
-                self._attr_native_value = None
-                self.cancel_scheduled_update()
-                if self.entity_id:
-                    self.async_write_ha_state()
-
-    @property
-    def enabled(self) -> bool:
-        """Return whether the sensor is enabled."""
-        return self._enabled
-
 
 class SunMinimumElevationSensor(BaseSolSensor):
     """Representation of a Sun Minimum Elevation sensor."""
 
-    def __init__(self, sun_helper, enabled=False) -> None:
+    entity_registry_enabled_default = False
+
+    def __init__(self, sun_helper) -> None:
         """Initialize the sensor."""
         # Initialize base entity
         super().__init__("Minimum Elevation", "min_elevation", "Sol")
@@ -428,7 +399,6 @@ class SunMinimumElevationSensor(BaseSolSensor):
         # State tracking
         self._min_time = None
         self._min_elevation = None
-        self._enabled = enabled
 
     @property
     def native_value(self) -> StateType:
@@ -448,12 +418,6 @@ class SunMinimumElevationSensor(BaseSolSensor):
 
     async def _async_update_logic(self, now):
         """Sensor-specific update logic."""
-        # If not enabled, stay unavailable
-        if not self._enabled:
-            self._attr_available = False
-            self._attr_native_value = None
-            return None  # Don't schedule updates when disabled
-        
         now = now or dt_util.utcnow()
         _LOGGER.debug("Minimum elevation sensor update triggered at %s", now)
         
@@ -482,24 +446,4 @@ class SunMinimumElevationSensor(BaseSolSensor):
             _LOGGER.error("Error updating minimum elevation sensor: %s", e, exc_info=True)
             self._attr_native_value = None
             self._attr_icon = "mdi:alert"
-            return now + timedelta(minutes=5)  # Retry in 5 minutes
-
-    def set_enabled(self, enabled: bool):
-        """Enable or disable the sensor."""
-        if self._enabled != enabled:
-            self._enabled = enabled
-            if enabled:
-                # Trigger an immediate update when enabled
-                self.hass.async_create_task(self.async_update())
-            else:
-                # Clear state when disabled
-                self._attr_available = False
-                self._attr_native_value = None
-                self.cancel_scheduled_update()
-                if self.entity_id:
-                    self.async_write_ha_state()
-
-    @property
-    def enabled(self) -> bool:
-        """Return whether the sensor is enabled."""
-        return self._enabled 
+            return now + timedelta(minutes=5)  # Retry in 5 minutes 

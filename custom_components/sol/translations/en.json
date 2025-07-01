@@ -11,9 +11,7 @@
           "temperature": "Temperature (°C)",
           "pressure": "Pressure (hPa)",
           "horizon": "Horizon offset (°)",
-          "elevation_step": "Elevation Step (°)",
-          "enable_max_elevation": "Enable Maximum Elevation Sensor",
-          "enable_min_elevation": "Enable Minimum Elevation Sensor"
+          "elevation_step": "Elevation Step (°)"
         }
       }
     },
