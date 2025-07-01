@@ -32,7 +32,20 @@ async def async_setup_entry(
     # Get elevation step from config
     elevation_step = config_entry.data.get("elevation_step", 1.0)
     
-    async_add_entities([SolSensor(), SunElevationSensor(sun_helper, elevation_step)], True)
+    # Get sensor enable flags from config
+    enable_max_elevation = config_entry.data.get("enable_max_elevation", False)
+    enable_min_elevation = config_entry.data.get("enable_min_elevation", False)
+    
+    # Create sensor list
+    sensors = [SolSensor(), SunElevationSensor(sun_helper, elevation_step)]
+    
+    # Add optional sensors based on config
+    if enable_max_elevation:
+        sensors.append(SunMaximumElevationSensor(sun_helper))
+    if enable_min_elevation:
+        sensors.append(SunMinimumElevationSensor(sun_helper))
+    
+    async_add_entities(sensors, True)
 
 
 class SolSensor(SensorEntity):
@@ -271,6 +284,140 @@ class SunElevationSensor(BaseSolSensor):
             
         except Exception as e:
             _LOGGER.error("Error updating Sol elevation sensor: %s", e, exc_info=True)
+            self._attr_native_value = None
+            self._attr_icon = "mdi:alert"
+            return now + timedelta(minutes=5)  # Retry in 5 minutes
+
+
+class SunMaximumElevationSensor(BaseSolSensor):
+    """Representation of a Sun Maximum Elevation sensor."""
+
+    def __init__(self, sun_helper) -> None:
+        """Initialize the sensor."""
+        # Initialize base entity
+        super().__init__("Maximum Elevation", "max_elevation", "Sol")
+        
+        self._attr_icon = "mdi:weather-sunny"
+        self._attr_native_unit_of_measurement = "°"
+        
+        # Store the sun helper for calculations
+        self.sun_helper = sun_helper
+        
+        # State tracking
+        self._max_time = None
+        self._max_elevation = None
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        return self._attr_native_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return entity specific state attributes."""
+        return {
+            "latitude": str(self.sun_helper.latitude) if self.sun_helper.latitude is not None else None,
+            "longitude": str(self.sun_helper.longitude) if self.sun_helper.longitude is not None else None,
+            "next_change": self.next_change,
+            "max_time": self._max_time,
+            "max_elevation": self._max_elevation,
+        }
+
+    async def _async_update_logic(self, now):
+        """Sensor-specific update logic."""
+        now = now or dt_util.utcnow()
+        _LOGGER.debug("Maximum elevation sensor update triggered at %s", now)
+        
+        try:
+            # Get maximum and minimum elevations for the next day
+            max_time, max_elevation, min_time, min_elevation = self.sun_helper.get_max_min_elevations(now, days_ahead=1)
+            
+            # Update state values
+            self._attr_native_value = round(max_elevation, 2)
+            self._attr_available = True
+            
+            # Store attributes
+            self._max_time = max_time.isoformat()
+            self._max_elevation = round(max_elevation, 2)
+            
+            _LOGGER.debug(
+                "Maximum elevation: %.2f° at %s",
+                max_elevation, max_time
+            )
+            
+            # Schedule next update at noon tomorrow (local time)
+            tomorrow = now.replace(hour=12, minute=0, second=0, microsecond=0) + timedelta(days=1)
+            return tomorrow
+            
+        except Exception as e:
+            _LOGGER.error("Error updating maximum elevation sensor: %s", e, exc_info=True)
+            self._attr_native_value = None
+            self._attr_icon = "mdi:alert"
+            return now + timedelta(minutes=5)  # Retry in 5 minutes
+
+
+class SunMinimumElevationSensor(BaseSolSensor):
+    """Representation of a Sun Minimum Elevation sensor."""
+
+    def __init__(self, sun_helper) -> None:
+        """Initialize the sensor."""
+        # Initialize base entity
+        super().__init__("Minimum Elevation", "min_elevation", "Sol")
+        
+        self._attr_icon = "mdi:weather-night"
+        self._attr_native_unit_of_measurement = "°"
+        
+        # Store the sun helper for calculations
+        self.sun_helper = sun_helper
+        
+        # State tracking
+        self._min_time = None
+        self._min_elevation = None
+
+    @property
+    def native_value(self) -> StateType:
+        """Return the state of the sensor."""
+        return self._attr_native_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return entity specific state attributes."""
+        return {
+            "latitude": str(self.sun_helper.latitude) if self.sun_helper.latitude is not None else None,
+            "longitude": str(self.sun_helper.longitude) if self.sun_helper.longitude is not None else None,
+            "next_change": self.next_change,
+            "min_time": self._min_time,
+            "min_elevation": self._min_elevation,
+        }
+
+    async def _async_update_logic(self, now):
+        """Sensor-specific update logic."""
+        now = now or dt_util.utcnow()
+        _LOGGER.debug("Minimum elevation sensor update triggered at %s", now)
+        
+        try:
+            # Get maximum and minimum elevations for the next day
+            max_time, max_elevation, min_time, min_elevation = self.sun_helper.get_max_min_elevations(now, days_ahead=1)
+            
+            # Update state values
+            self._attr_native_value = round(min_elevation, 2)
+            self._attr_available = True
+            
+            # Store attributes
+            self._min_time = min_time.isoformat()
+            self._min_elevation = round(min_elevation, 2)
+            
+            _LOGGER.debug(
+                "Minimum elevation: %.2f° at %s",
+                min_elevation, min_time
+            )
+            
+            # Schedule next update at midnight tomorrow (local time)
+            tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+            return tomorrow
+            
+        except Exception as e:
+            _LOGGER.error("Error updating minimum elevation sensor: %s", e, exc_info=True)
             self._attr_native_value = None
             self._attr_icon = "mdi:alert"
             return now + timedelta(minutes=5)  # Retry in 5 minutes 

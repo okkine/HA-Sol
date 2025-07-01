@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from slugify import slugify
 import ephem
 import math
+import logging
 
 try:
     import ambiance
@@ -387,6 +388,175 @@ class SunHelper:
         finally:
             # Restore original horizon setting
             self.observer.horizon = original_horizon
+
+    def get_max_min_elevations(self, 
+                              start_time: datetime,
+                              days_ahead: int = 1) -> Tuple[datetime, float, datetime, float]:
+        """
+        Get the exact times and elevations of maximum and minimum sun elevation.
+        
+        Args:
+            start_time: Local system time to start calculation from
+            days_ahead: Number of days to search ahead (default: 1)
+        
+        Returns:
+            Tuple of (max_time, max_elevation, min_time, min_elevation) as local datetimes
+            
+        Note:
+            Uses iterative search with 1-hour increments to find true extrema.
+            More accurate than solar noon/midnight for true maximum/minimum elevations.
+        """
+        from datetime import timedelta
+        
+        logger = logging.getLogger(__name__)
+        
+        # Convert to UTC for calculations
+        if start_time.tzinfo is None:
+            utc_start = start_time
+        else:
+            utc_start = start_time.astimezone(timezone.utc)
+        
+        # Calculate search end time
+        search_end = utc_start + timedelta(days=days_ahead)
+        
+        # Initialize tracking variables
+        max_elevation = -90.0
+        min_elevation = 90.0
+        max_time = None
+        min_time = None
+        
+        # Search with 1-hour increments
+        current_time = utc_start
+        search_increment = timedelta(hours=1)
+        
+        while current_time <= search_end:
+            try:
+                # Get elevation at current time
+                elevation = self._get_elevation_at_time(current_time)
+                
+                # Track maximum
+                if elevation > max_elevation:
+                    max_elevation = elevation
+                    max_time = current_time
+                
+                # Track minimum
+                if elevation < min_elevation:
+                    min_elevation = elevation
+                    min_time = current_time
+                    
+            except Exception as e:
+                logger.debug("Error calculating elevation at %s: %s", current_time, e)
+            
+            # Move to next hour
+            current_time += search_increment
+        
+        # Convert back to local time
+        if max_time is not None:
+            max_time_local = max_time.astimezone()
+        else:
+            max_time_local = start_time
+            
+        if min_time is not None:
+            min_time_local = min_time.astimezone()
+        else:
+            min_time_local = start_time
+        
+        logger.debug(
+            "Found max elevation %.2f° at %s, min elevation %.2f° at %s",
+            max_elevation, max_time_local, min_elevation, min_time_local
+        )
+        
+        return max_time_local, max_elevation, min_time_local, min_elevation
+
+    def find_extremum_precise(self, 
+                             start_time: datetime,
+                             is_maximum: bool,
+                             search_window_hours: int = 2) -> Tuple[datetime, float]:
+        """
+        Find exact time and elevation of maximum or minimum within a search window.
+        
+        Args:
+            start_time: Local system time to start search from
+            is_maximum: True to find maximum, False to find minimum
+            search_window_hours: Hours to search before and after start_time
+        
+        Returns:
+            Tuple of (exact_time, exact_elevation) as local datetime
+            
+        Note:
+            Uses binary search with 1-second precision within the search window.
+        """
+        from datetime import timedelta
+        
+        logger = logging.getLogger(__name__)
+        
+        # Convert to UTC
+        if start_time.tzinfo is None:
+            utc_start = start_time
+        else:
+            utc_start = start_time.astimezone(timezone.utc)
+        
+        # Define search window
+        window_start = utc_start - timedelta(hours=search_window_hours)
+        window_end = utc_start + timedelta(hours=search_window_hours)
+        
+        # Binary search with 1-second precision
+        left = window_start
+        right = window_end
+        best_time = utc_start
+        best_elevation = self._get_elevation_at_time(utc_start)
+        
+        # Search until we have 1-second precision
+        while (right - left).total_seconds() > 1:
+            # Calculate midpoints for testing
+            mid1 = left + (right - left) / 3
+            mid2 = right - (right - left) / 3
+            
+            # Get elevations at test points
+            try:
+                elev1 = self._get_elevation_at_time(mid1)
+                elev2 = self._get_elevation_at_time(mid2)
+            except Exception as e:
+                logger.debug("Error in binary search at %s/%s: %s", mid1, mid2, e)
+                break
+            
+            # Update best result
+            if is_maximum:
+                if elev1 > best_elevation:
+                    best_elevation = elev1
+                    best_time = mid1
+                if elev2 > best_elevation:
+                    best_elevation = elev2
+                    best_time = mid2
+                
+                # Narrow search window
+                if elev1 > elev2:
+                    right = mid2
+                else:
+                    left = mid1
+            else:  # Finding minimum
+                if elev1 < best_elevation:
+                    best_elevation = elev1
+                    best_time = mid1
+                if elev2 < best_elevation:
+                    best_elevation = elev2
+                    best_time = mid2
+                
+                # Narrow search window
+                if elev1 < elev2:
+                    right = mid2
+                else:
+                    left = mid1
+        
+        # Convert back to local time
+        best_time_local = best_time.astimezone()
+        
+        logger.debug(
+            "Found %s elevation %.2f° at %s",
+            "maximum" if is_maximum else "minimum", best_elevation, best_time_local
+        )
+        
+        return best_time_local, best_elevation
 
 
 # Example usage:

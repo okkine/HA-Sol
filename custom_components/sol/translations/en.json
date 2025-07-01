@@ -2,13 +2,19 @@
   "config": {
     "step": {
       "user": {
+        "title": "Sol Configuration",
+        "description": "Configure your location and atmospheric parameters for accurate sun position calculations. Choose whether to use system defaults or manual settings for location and pressure.",
         "data": {
-          "name": "Name",
-          "host": "Host",
-          "port": "Port"
-        },
-        "description": "Set up your Sol integration.",
-        "title": "Sol"
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "elevation": "Elevation (meters)",
+          "temperature": "Temperature (°C)",
+          "pressure": "Pressure (hPa)",
+          "horizon": "Horizon offset (°)",
+          "elevation_step": "Elevation Step (°)",
+          "enable_max_elevation": "Enable Maximum Elevation Sensor",
+          "enable_min_elevation": "Enable Minimum Elevation Sensor"
+        }
       }
     },
     "error": {
