@@ -48,6 +48,20 @@ class ReversalCacheManager:
             return
         
         try:
+            # Check latitude to determine if we're in tropical region
+            config_data = get_config_entry_data(entry_id)
+            latitude = abs(config_data.get('latitude', self.hass.config.latitude))
+            
+            if latitude > TROPICAL_LATITUDE_THRESHOLD:
+                # Non-tropical latitude - no reversals possible
+                # Just initialize last_known_state with direction, no checkpoints needed
+                _LOGGER.info(f"Non-tropical latitude ({latitude:.2f}°) for {entry_id}, skipping checkpoint cache")
+                cache = await self._initialize_non_tropical(entry_id)
+                self._initialized_entries.add(entry_id)
+                _LOGGER.info(f"Non-tropical cache initialized for {entry_id}: direction={cache['last_known_state']['direction']}")
+                return
+            
+            # Tropical latitude - full checkpoint system
             # Try to load existing cache
             cache = await load_reversal_cache(self.hass, entry_id)
             
@@ -123,7 +137,15 @@ class ReversalCacheManager:
         if cache is None:
             # Something went wrong, reinitialize
             _LOGGER.warning(f"Cache missing for initialized entry {entry_id}, reinitializing")
-            cache = await self._initialize_from_solar_noon(entry_id)
+            
+            # Check latitude to determine initialization method
+            config_data = get_config_entry_data(entry_id)
+            latitude = abs(config_data.get('latitude', self.hass.config.latitude))
+            
+            if latitude > TROPICAL_LATITUDE_THRESHOLD:
+                cache = await self._initialize_non_tropical(entry_id)
+            else:
+                cache = await self._initialize_from_solar_noon(entry_id)
         
         return cache
     
@@ -154,6 +176,65 @@ class ReversalCacheManager:
                     direction *= -1
         
         return direction
+    
+    async def _initialize_non_tropical(self, entry_id: str) -> Dict[str, Any]:
+        """
+        Initialize cache for non-tropical latitude (no reversals possible).
+        
+        Sets last_known_state with azimuth direction that never changes.
+        Direction is sampled at previous solar noon for consistency.
+        No checkpoints needed.
+        
+        Args:
+            entry_id: Config entry ID
+            
+        Returns:
+            Minimal cache dictionary with only last_known_state
+        """
+        config_data = get_config_entry_data(entry_id)
+        now = dt_util.now()
+        now_utc = now.astimezone(timezone.utc)
+        
+        # Get previous solar noon for stable direction sampling
+        observer = ephem.Observer()
+        observer.lat = str(config_data.get('latitude', self.hass.config.latitude))
+        observer.lon = str(config_data.get('longitude', self.hass.config.longitude))
+        observer.elevation = config_data.get('elevation', self.hass.config.elevation)
+        observer.date = now_utc
+        
+        sun = ephem.Sun()
+        prev_solar_noon = observer.previous_transit(sun)
+        prev_solar_noon_dt = prev_solar_noon.datetime().replace(tzinfo=timezone.utc)
+        
+        # Sample direction at previous solar noon
+        noon_minus_10 = prev_solar_noon_dt - timedelta(minutes=10)
+        noon_plus_10 = prev_solar_noon_dt + timedelta(minutes=10)
+        
+        az_before = get_sun_position(self.hass, noon_minus_10, entry_id, config_data=config_data)['azimuth']
+        az_after = get_sun_position(self.hass, noon_plus_10, entry_id, config_data=config_data)['azimuth']
+        noon_azimuth = get_sun_position(self.hass, prev_solar_noon_dt, entry_id, config_data=config_data)['azimuth']
+        
+        derivative = calculate_azimuth_derivative(az_before, az_after)
+        direction = 1 if derivative > 0 else -1
+        
+        # Create minimal cache with only last_known_state (no checkpoints)
+        cache = {
+            'last_known_state': {
+                'time': prev_solar_noon_dt,
+                'direction': direction,
+                'azimuth': noon_azimuth
+            },
+            'checkpoints': [],  # Empty - no reversals at this latitude
+            'location': {
+                'latitude': config_data.get('latitude', self.hass.config.latitude),
+                'longitude': config_data.get('longitude', self.hass.config.longitude)
+            },
+            'non_tropical': True  # Flag to indicate this is a non-tropical cache
+        }
+        
+        await save_reversal_cache(self.hass, entry_id, cache)
+        
+        return cache
     
     async def _initialize_from_solar_noon(self, entry_id: str) -> Dict[str, Any]:
         """
@@ -302,7 +383,11 @@ class ReversalCacheManager:
         # Check for invalid cache structure - reinitialize if needed
         if 'checkpoints' not in cache or 'last_known_state' not in cache:
             _LOGGER.warning(f"Invalid cache structure for {entry_id}, reinitializing")
-            return await self._initialize_from_solar_noon(entry_id)
+            latitude = abs(config_data.get('latitude', self.hass.config.latitude))
+            if latitude > TROPICAL_LATITUDE_THRESHOLD:
+                return await self._initialize_non_tropical(entry_id)
+            else:
+                return await self._initialize_from_solar_noon(entry_id)
         
         # Check if location changed
         cached_lat = cache.get('location', {}).get('latitude')
@@ -312,7 +397,15 @@ class ReversalCacheManager:
         
         if cached_lat != current_lat or cached_lon != current_lon:
             _LOGGER.info(f"Location changed for {entry_id}, reinitializing cache")
-            return await self._initialize_from_solar_noon(entry_id)
+            latitude = abs(current_lat)
+            if latitude > TROPICAL_LATITUDE_THRESHOLD:
+                return await self._initialize_non_tropical(entry_id)
+            else:
+                return await self._initialize_from_solar_noon(entry_id)
+        
+        # If this is a non-tropical cache, just return it (no maintenance needed)
+        if cache.get('non_tropical', False):
+            return cache
         
         # Remove past checkpoints and update last_known_state
         passed_checkpoints = [cp for cp in cache['checkpoints'] if cp['time'] <= now_utc]
@@ -623,6 +716,11 @@ class ReversalCacheManager:
         
         try:
             cache = await load_reversal_cache(self.hass, entry_id)
+            
+            # Skip maintenance scheduling for non-tropical caches (no checkpoints to maintain)
+            if cache and cache.get('non_tropical', False):
+                _LOGGER.debug(f"Skipping maintenance scheduling for non-tropical entry {entry_id}")
+                return
             
             if cache and cache.get('checkpoints'):
                 # Schedule for 100ms after first checkpoint
