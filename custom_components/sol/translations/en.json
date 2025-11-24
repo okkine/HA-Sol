@@ -1,0 +1,47 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Sol Configuration",
+                "description": "Choose how to configure your location for sun position tracking.",
+                "data": {
+                    "location_type": "Location Type"
+                }
+            },
+            "location": {
+                "title": "Choose Location",
+                "description": "Select a location on the map and enter elevation in meters.",
+                "data": {
+                    "location": "Location",
+                    "elevation": "Elevation (meters)",
+                    "location_name": "Location Name"
+                },
+                "data_description": {
+                    "info": "Select your location on the map below and adjust elevation if needed."
+                }
+            }
+        },
+        "error": {
+            "invalid_location": "Invalid location selected",
+            "cannot_connect": "Failed to connect",
+            "unknown": "Unexpected error",
+            "required": "This field is required",
+            "system_location_exists": "System location is already configured",
+            "location_name_exists": "A location with this name already exists",
+            "step_too_low": "Azimuth and Elevation step values must be 0.1 or higher."
+        },
+        "abort": {
+            "already_configured": "Device is already configured"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "name": "Name"
+                },
+                "title": "Sol Options"
+            }
+        }
+    }
+}
