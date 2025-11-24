@@ -48,7 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name="Sol",
         manufacturer="Home Assistant Community",
         model="Sun Position Tracker",
-        sw_version="0.1.0",  # Match your integration version
+        sw_version="2025.11.24",  # Match your integration version
         entry_type=DeviceEntryType.SERVICE,  # Indicates this is a service, not hardware
     )
     
