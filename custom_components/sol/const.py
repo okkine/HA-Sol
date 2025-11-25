@@ -6,10 +6,10 @@ NAME = "Sol"
 elevation_step = 0.5
 azimuth_step = 1
 
-DEBUG_ATTRIBUTES = True
+DEBUG_ATTRIBUTES = False
 # Debug flags for sensors
-DEBUG_ELEVATION_SENSOR = True
-DEBUG_AZIMUTH_SENSOR = True
+DEBUG_ELEVATION_SENSOR = False
+DEBUG_AZIMUTH_SENSOR = False
 # Add more as needed for other sensors
 
 ELEVATION_TOLERANCE = 1  # seconds

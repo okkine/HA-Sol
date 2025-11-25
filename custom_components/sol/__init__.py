@@ -46,8 +46,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, entry.entry_id)},
         name="Sol",
-        manufacturer="Home Assistant Community",
-        model="Sun Position Tracker",
+        manufacturer="Okkine",
+        model="Solar Position Tracker",
         sw_version="2025.11.24",  # Match your integration version
         entry_type=DeviceEntryType.SERVICE,  # Indicates this is a service, not hardware
     )
