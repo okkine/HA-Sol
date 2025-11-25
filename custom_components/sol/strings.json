@@ -15,9 +15,6 @@
           "location": "Location",
           "elevation": "Elevation (meters)",
           "location_name": "Location Name"
-        },
-        "data_description": {
-          "info": "Select your location on the map below and adjust elevation if needed."
         }
       }
     },

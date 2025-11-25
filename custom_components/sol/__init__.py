@@ -7,11 +7,14 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
 from homeassistant.helpers.device_registry import async_get as async_get_device_registry
 
 from .const import DOMAIN
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 from .config_store import store_config_entry_data, remove_config_entry_data
 from .cache import get_cache_instance, get_solar_events_cache_instance
 from .reversal_cache import get_reversal_cache_manager
@@ -48,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name="Sol",
         manufacturer="Okkine",
         model="Solar Position Tracker",
-        sw_version="2025.11.24",  # Match your integration version
+        sw_version="2025.11.25",  # Match your integration version
         entry_type=DeviceEntryType.SERVICE,  # Indicates this is a service, not hardware
     )
     
