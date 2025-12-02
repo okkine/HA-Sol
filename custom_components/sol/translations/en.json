@@ -16,6 +16,15 @@
                     "elevation": "Elevation (meters)",
                     "location_name": "Location Name"
                 }
+            },
+            "update_steps": {
+                "title": "Configure Sensor Settings",
+                "description": "Set update step sizes and optional sensors.",
+                "data": {
+                    "azimuth_step": "Azimuth Step (degrees)",
+                    "elevation_step": "Elevation Step (degrees)",
+                    "enable_solstice_curve": "Enable Declination Normalized sensor"
+                }
             }
         },
         "error": {

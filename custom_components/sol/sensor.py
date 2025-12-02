@@ -10,6 +10,8 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
+from homeassistant.components import persistent_notification
 
 from .const import DOMAIN, DEBUG_ELEVATION_SENSOR, DEBUG_AZIMUTH_SENSOR, DEBUG_ATTRIBUTES
 from .base_sensors import BaseElevationSensor, BaseAzimuthSensor, BasePositionSensor
@@ -56,8 +58,16 @@ async def async_setup_entry(
         _LOGGER.error(f"Failed to create AzimuthSensor for entry {config_entry.entry_id}: {e}")
     
     try:
+        # Create new Declination Normalized sensor (primary)
+        declination_sensor = DeclinationNormalizedSensor(hass, config_entry.entry_id, enabled_by_default=enable_solstice_curve)
+        sensors.append(declination_sensor)
         
-        solstice_sensor = SolsticeCurveSensor(hass, config_entry.entry_id, enabled_by_default=enable_solstice_curve)
+    except Exception as e:
+        _LOGGER.error(f"Failed to create DeclinationNormalizedSensor for entry {config_entry.entry_id}: {e}")
+    
+    try:
+        # Create old Solstice Curve sensor for backward compatibility (disabled by default)
+        solstice_sensor = SolsticeCurveSensor(hass, config_entry.entry_id, enabled_by_default=False)
         sensors.append(solstice_sensor)
         
     except Exception as e:
@@ -448,6 +458,200 @@ class SolsticeCurveSensor(BasePositionSensor):
     def __init__(self, hass: HomeAssistant, entry_id: str, enabled_by_default: bool = False):
         # Format the name using our naming convention
         name = "Solstice Curve"
+        formatted_name, unique_id = format_sensor_naming(name, entry_id)
+
+        # Initialize base sensor
+        super().__init__(hass=hass, sensor_name=formatted_name, unique_id=unique_id)
+        
+        # Store entry_id for cache operations
+        self._entry_id = entry_id
+        
+        # Set entity registry enabled state
+        self._attr_entity_registry_enabled_default = enabled_by_default
+        
+        # Add device info to link this sensor to the device
+        self._attr_device_info = {
+            "identifiers": {(DOMAIN, entry_id)},
+        }
+        
+        # Set sensor properties
+        self._attr_device_class = None
+        self._attr_state_class = "measurement"
+        
+        # Initialize with cached data immediately
+        self._initialized = False
+        
+        # Event listener will be registered in async_added_to_hass
+        self._unsubscribe_cache_events = None
+
+    async def async_added_to_hass(self) -> None:
+        """Set up when entity is added to hass."""
+        await super().async_added_to_hass()
+        
+        # Register event listener now that we're fully integrated
+        self._unsubscribe_cache_events = self.hass.bus.async_listen(
+            f"{DOMAIN}_solstice_curve_cache_updated",
+            self._handle_cache_update
+        )
+
+    @property
+    def native_unit_of_measurement(self):
+        """Return the unit of measurement."""
+        return "∞"  # Infinity symbol
+
+    @property
+    def icon(self):
+        """Return the icon."""
+        return "mdi:infinity"  # Infinity icon
+
+    async def _handle_cache_update(self, event):
+        """Handle cache update events."""
+        if event.data.get("entry_id") == self._entry_id:
+            
+            # Convert from -1 to +1 range back to 0-1 range for backward compatibility
+            normalized_minus1_to_plus1 = event.data["normalized"]
+            normalized_0to1 = (normalized_minus1_to_plus1 + 1.0) / 2.0
+            
+            # Update sensor immediately with cached data (no rounding)
+            self._attr_native_value = normalized_0to1
+            
+            # Get current sun position for declination
+            config_data = get_config_entry_data(self._entry_id)
+            sun_data = get_sun_position(self.hass, datetime.now(), self._entry_id, config_data=config_data)
+            
+            attributes = {
+                'declination': sun_data['declination'],
+            }
+            
+            if DEBUG_ATTRIBUTES:
+                attributes['previous_solstice'] = event.data["previous_solstice"]
+                attributes['next_solstice'] = event.data["next_solstice"]
+                attributes['target_time'] = event.data["target_time"]
+                attributes['cache_source'] = 'event_triggered'
+                attributes['last_update'] = datetime.now().isoformat()
+            
+            self._attr_extra_state_attributes = attributes
+            
+            # Mark as initialized
+            self._initialized = True
+            
+            # Schedule state update
+            self.async_schedule_update_ha_state()
+            
+            
+
+    async def _async_update_logic(self, now=None) -> datetime | None:
+        """Initial update and fallback logic."""
+        # Use current time if not provided
+        if now is None:
+            import zoneinfo
+            tz = zoneinfo.ZoneInfo(self.hass.config.time_zone)
+            now = datetime.now(tz)
+        
+        # If we're already initialized via events, don't schedule any updates
+        if self._initialized:
+            return None  # Don't schedule any updates
+        
+        try:
+            
+            # Get cached solstice curve data
+            normalized, previous_solstice, next_solstice, target_time = get_cached_solstice_curve(
+                self.hass, self._entry_id, now
+            )
+            
+            # Convert from -1 to +1 range back to 0-1 range for backward compatibility
+            normalized_0to1 = (normalized + 1.0) / 2.0
+            
+            # Update the sensor value (no rounding)
+            self._attr_native_value = normalized_0to1
+            
+            # Get current sun position for declination
+            config_data = get_config_entry_data(self._entry_id)
+            sun_data = get_sun_position(self.hass, now, self._entry_id, config_data=config_data)
+            
+            # Set extra state attributes
+            attributes = {
+                'declination': sun_data['declination'],
+            }
+            
+            if DEBUG_ATTRIBUTES:
+                attributes['previous_solstice'] = previous_solstice
+                attributes['next_solstice'] = next_solstice
+                attributes['target_time'] = target_time
+                attributes['cache_source'] = 'initial_cache_lookup'
+                attributes['last_update'] = now.isoformat()
+            
+            self._attr_extra_state_attributes = attributes
+            
+            # Mark as initialized
+            self._initialized = True
+            
+            # Show deprecation warning notification when sensor initializes
+            notification_id = f"{DOMAIN}_solstice_curve_deprecation"
+            persistent_notification.create(
+                self.hass,
+                title="Sol: Solstice Curve Sensor Deprecated",
+                message=(
+                    "The 'Solstice Curve' sensor is deprecated and will be removed in a future version. "
+                    "Please use the 'Declination Normalized' sensor instead. "
+                    "The new sensor provides the same functionality with a -1 to +1 range "
+                    "(instead of 0 to 1) for better clarity.\n\n"
+                    "You can disable the old sensor in Settings > Devices & Services > Sol > Entities."
+                ),
+                notification_id=notification_id,
+            )
+            
+            
+        except Exception as e:
+            # Fallback to manual calculation if cache fails
+            from .utils import get_solstice_curve
+            # Get config data for the fallback calculation
+            config_data = get_config_entry_data(self._entry_id)
+            normalized, previous_solstice, next_solstice = get_solstice_curve(
+                self.hass, now, self._entry_id, config_data=config_data
+            )
+            # Convert from -1 to +1 range back to 0-1 range for backward compatibility
+            normalized_0to1 = (normalized + 1.0) / 2.0
+            self._attr_native_value = normalized_0to1  # No rounding
+            
+            # Get current sun position for declination
+            sun_data = get_sun_position(self.hass, now, self._entry_id, config_data=config_data)
+            
+            attributes = {
+                'declination': sun_data['declination'],
+            }
+            
+            if DEBUG_ATTRIBUTES:
+                attributes['previous_solstice'] = previous_solstice
+                attributes['next_solstice'] = next_solstice
+                attributes['target_time'] = now  # Fallback uses current time
+                attributes['cache_source'] = 'direct_calculation_fallback'
+                attributes['error'] = str(e)
+                attributes['last_update'] = now.isoformat()
+            
+            self._attr_extra_state_attributes = attributes
+            
+            # Mark as initialized even with fallback
+            self._initialized = True
+            
+            
+        
+        # Return None to prevent any scheduled updates - we're event-driven
+        return None
+    
+    async def async_will_remove_from_hass(self):
+        """Clean up event listeners when sensor is removed."""
+        if hasattr(self, '_unsubscribe_cache_events') and self._unsubscribe_cache_events:
+            self._unsubscribe_cache_events()
+        await super().async_will_remove_from_hass()
+
+
+class DeclinationNormalizedSensor(BasePositionSensor):
+    """Sensor for declination normalized (-1 to +1 seasonal position)."""
+    
+    def __init__(self, hass: HomeAssistant, entry_id: str, enabled_by_default: bool = False):
+        # Format the name using our naming convention
+        name = "Declination Normalized"
         formatted_name, unique_id = format_sensor_naming(name, entry_id)
 
         # Initialize base sensor

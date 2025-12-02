@@ -865,11 +865,12 @@ def get_solstice_curve(
     config_data: dict = None
 ) -> tuple[float, datetime.datetime, datetime.datetime]:
     """
-    Calculate normalized solstice curve (0-1) where 0=winter solstice, 1=summer solstice.
+    Calculate normalized solstice curve (-1 to +1) where -1=winter solstice, +1=summer solstice.
     
     The curve represents the seasonal position:
-    - 1.0 at summer solstice (maximum solar declination)
-    - 0.0 at winter solstice (minimum solar declination)
+    - +1.0 at summer solstice (maximum solar declination)
+    - -1.0 at winter solstice (minimum solar declination)
+    - 0.0 at equinox (midpoint between solstices)
     - Values increase as we approach summer solstice
     - Values decrease as we approach winter solstice
     
@@ -942,18 +943,25 @@ def get_solstice_curve(
     min_declination = min(summer_declination, winter_declination)  # Should be winter
     
     if max_declination == min_declination:  # Prevent division by zero
-        normalized = 0.5
+        normalized = 0.0
     else:
-        # Calculate normalized value: 0 at winter solstice, 1 at summer solstice
-        normalized = (current_declination - min_declination) / (max_declination - min_declination)
+        # Calculate normalized value: 0 at winter solstice, 1 at summer solstice (0-1 range)
+        normalized_0to1 = (current_declination - min_declination) / (max_declination - min_declination)
         
         # Account for hemisphere: In southern hemisphere, seasons are inverted
         # When it's summer in the north (positive declination), it's winter in the south
         if is_southern_hemisphere:
-            normalized = 1.0 - normalized
+            normalized_0to1 = 1.0 - normalized_0to1
         
-        # Clamp between 0-1
-        normalized = max(0.0, min(1.0, normalized))
+        # Clamp between 0-1 first
+        normalized_0to1 = max(0.0, min(1.0, normalized_0to1))
+        
+        # Convert from 0-1 range to -1 to +1 range
+        # -1 at winter solstice, 0 at equinox, +1 at summer solstice
+        normalized = 2.0 * normalized_0to1 - 1.0
+        
+        # Clamp between -1 to +1 (shouldn't be necessary, but safety check)
+        normalized = max(-1.0, min(1.0, normalized))
     
     return normalized, previous_solstice, next_solstice
 

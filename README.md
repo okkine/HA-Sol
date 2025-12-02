@@ -1,20 +1,20 @@
 # Sol - Sun Position & Seasonal Tracking for Home Assistant
 
-Sol is a comprehensive Home Assistant integration that provides precise tracking of the sun's position, seasonal progression, and related astronomical events. Built on the robust PyEphem library, it automatically compensates for atmospheric refraction and intelligently schedules updates to provide accurate data exactly when you need it.
+Sol is a Home Assistant integration that tracks the sun's position, seasonal changes, and astronomical events with precision. 
 
 ---
 
 ## Overview
 
-Sol gives you three specialized sensors that work together to provide complete solar tracking capabilities. Whether you're interested in the sun's current position in the sky, tracking seasonal changes, or when it will reach a specific elevation, Sol has you covered.
+Sol gives you three sensors that work together to cover all your solar tracking needs. Want to know where the sun is right now? Track how seasons change? Know when it'll hit a specific angle? Sol's got you covered.
 
 ### What Makes Sol Different?
 
-- **Smart Updates**: Sensors update only when meaningful changes occur, not on arbitrary schedules
-- **Atmospheric Compensation**: Automatically adjusts for atmospheric refraction based on your location's elevation and pressure
-- **Configurable Precision**: Choose your own step sizes for position tracking to balance accuracy with update frequency
-- **Persistent Reversal Cache**: Advanced azimuth tracking with intelligent reversal detection that survives reboots
-- **Seasonal Awareness**: Track the sun's annual cycle with a normalized solstice curve
+- **Smart Updates**: Sensors only update when something actually changes—no pointless polling
+- **Atmospheric Compensation**: Adjusts for how the atmosphere bends sunlight based on your elevation and air pressure
+- **Configurable Precision**: Set your own step sizes to balance accuracy against how often things update
+- **Persistent Reversal Cache**: In tropical latitudes, the sun's compass direction can occasionally reverse at night during certain times of year—a phenomenon that's prevented other sun integrations from tracking azimuth in predictable steps. We solve this by pre-calculating and caching these reversals, letting us provide smooth, consistent azimuth updates year-round
+- **Seasonal Awareness**: Track the sun's yearly journey with a normalized solstice curve
 
 ---
 
@@ -22,124 +22,124 @@ Sol gives you three specialized sensors that work together to provide complete s
 
 ### Solar Elevation 
 
-Tracks how high the sun is above the horizon, measured in degrees.
+This tracks how high the sun sits above the horizon in degrees.
 
-- **Range**: -90° (directly below) to +90° (directly overhead)
-- **Updates**: Automatically when the sun reaches each elevation step
-- **Default Step**: 0.5° (configurable)
+- **Range**: -90° (straight down) to +90° (directly overhead)
+- **Updates**: Automatically whenever the sun crosses each elevation step
+- **Default Step**: 0.5° (you can change this)
 
 **Attributes:**
-- `next_update` - When the sensor will next update
-- `next_target` - The elevation value that will trigger the next update
+- `next_update` - When the sensor updates next
+- `next_target` - The elevation that'll trigger the next update
 
-**Example Use**: Trigger automations when the sun rises above your horizon (0°), reaches golden hour elevation, or sets below a specific angle for closing blinds.
+**Example Use**: Fire off automations when the sun rises above the horizon (0°), hits golden hour elevation, or drops below a certain angle to close your blinds.
 
 ---
 
 ### Solar Azimuth
 
-Tracks the sun's compass direction, measured in degrees.
+This tracks which compass direction the sun's in, measured in degrees.
 
 - **Range**: 0° (North) → 90° (East) → 180° (South) → 270° (West) → 360° (North)
 - **Updates**: Automatically when the sun reaches each azimuth step
 - **Default Step**: 1.0° (configurable)
 
 **Special Features:**
-- Automatically detects and handles azimuth reversals in tropical regions (when the sun changes direction)
-- Persistent caching system maintains up to 4 future reversals, surviving reboots and power outages
-- Intelligent direction tracking ensures accurate positioning even when reversals occur shortly after midnight
+- Automatically detects and handles azimuth reversals in tropical areas (when the sun's compass direction reverses—usually happening at night when the sun is below the horizon)
+- Persistent caching keeps track of up to 4 future reversals, even through reboots and power outages, enabling reliable step-based updates that other integrations can't provide
+- Smart direction tracking stays accurate even when reversals happen right after midnight
 
 **Attributes:**
-- `next_update` - When the sensor will next update
-- `next_target` - The azimuth value that will trigger the next update
-- `reversal_time` - When the next azimuth reversal will occur (tropical locations only)
+- `next_update` - When the sensor updates next
+- `next_target` - The azimuth that'll trigger the next update
+- `reversal_time` - When the next azimuth reversal happens (tropical locations only)
 
-**Example Use**: Know exactly where the sun is in the sky, trigger window treatments when sun hits specific windows, or create dynamic solar tracking for panels. Essential for locations within ±23.45° latitude where the sun can reverse direction.
+**Example Use**: Know exactly where the sun is, automate window treatments when sun hits certain windows, or set up dynamic solar panel tracking. This is especially useful if you're within ±23.45° latitude where the sun can reverse direction.
 
 ---
 
-### Solstice Curve
+### Declination Normalized
 
-Tracks the sun's position in the annual seasonal cycle as a normalized value.
+This tracks where we are in the annual seasonal cycle as a number between 0 and 1.
 
 - **Range**: 0.0 (winter solstice) to 1.0 (summer solstice)
-- **Updates**: Event-driven from cache system (noon and midnight updates)
-- **Hemisphere Aware**: Automatically adjusts for northern/southern hemisphere
+- **Updates**: Event-driven from the cache system (noon and midnight updates)
+- **Hemisphere Aware**: Automatically adjusts based on whether you're north or south of the equator
 
 **Attributes:**
 - `declination` - Current solar declination in degrees
 
 **How It Works:**
-The solstice curve represents where the sun is in its annual journey between minimum elevation (winter solstice) and maximum elevation (summer solstice). This normalized value makes it easy to create seasonal automations.
+The declination normalized sensor shows where the sun is in its yearly trip between its lowest point (winter solstice) and highest point (summer solstice). This normalized value makes seasonal automations easier to set up.
 
-- **0.0** = Winter solstice (shortest day, lowest sun elevation)
-- **0.5** = Equinoxes (equal day/night)
-- **1.0** = Summer solstice (longest day, highest sun elevation)
+- **0.0** = Winter solstice (shortest day, sun's lowest in the sky)
+- **0.5** = Equinoxes (day and night are equal)
+- **1.0** = Summer solstice (longest day, sun's highest in the sky)
 
 **Example Use**: 
-- Create gradually changing automations that follow the seasons
-- Adjust heating/cooling schedules based on seasonal sun intensity
-- Trigger different behaviors as the year progresses without complex date logic
-- Calculate optimal solar panel angles throughout the year
+- Create automations that gradually change with the seasons
+- Adjust heating/cooling based on how intense the sun is throughout the year
+- Trigger different behaviors as seasons change without messing with complicated date logic
+- Calculate optimal solar panel angles year-round
 
-**Note**: This sensor is disabled by default and can be enabled in the entity settings if needed.
+**Note**: This sensor's disabled by default—you can turn it on in entity settings if you want it.
 
 ---
 
 ## Atmospheric Compensation
 
-Sol automatically accounts for how Earth's atmosphere bends light from the sun, making it appear higher in the sky than its true astronomical position. This effect is most noticeable near the horizon, especially at sunrise and sunset.
+Sol automatically accounts for the Earth's atmospheric refraction of sunlight, which makes the sun appear higher in the sky than its true astronomical position. This effect is most pronounced near the horizon, especially at sunrise and sunset.
 
 ### Apparent vs. True Position
 
-**By default, Sol shows the sun's *apparent position*** - where it appears to be in the sky when you look at it. This is what you'll actually see with your eyes, accounting for atmospheric refraction.
+**By default, Sol shows you the sun's *apparent position*** - where it looks like it is when you actually see it in the sky. This accounts for atmospheric refraction.
 
-If you prefer the **true astronomical position** (the sun's geometric position without atmospheric effects), you can set the atmospheric pressure to `0` during configuration. This disables refraction correction entirely.
+If you'd rather have the **true astronomical position** (the sun's geometric position without atmospheric effects), just set atmospheric pressure to `0` during setup. This turns off refraction correction completely.
 
 **How It Works:**
-- Uses your location's elevation to calculate typical atmospheric pressure
-- Applies standard astronomical refraction models to calculate apparent position
-- Fully configurable - set pressure to `0` for true position, or customize for your local conditions
+- Uses your location's elevation to figure out typical atmospheric pressure
+- Applies standard astronomical refraction models to calculate where the sun appears
+- Fully configurable—set pressure to `0` for true position, or customize for your local conditions
 
 **Default Settings:**
 - Pressure: 1013.25 mbar (standard sea level pressure)
 - Automatically adjusted based on your configured elevation
-- **Result**: Shows apparent position (what you see in the sky)
+- **Result**: Shows apparent position (what you actually see)
 
 **For True Astronomical Position:**
 - Set pressure to `0` mbar during configuration
 - **Result**: Shows geometric position (no atmospheric correction)
 
-Most users should use the default settings, as the apparent position is more useful for practical applications like solar panel tracking, photography timing, and home automation.
+Most people should stick with the defaults—apparent position is more useful for real-world stuff like solar panel tracking, photography timing, and home automation.
 
 ---
 
 ## Azimuth Reversal Tracking
 
-One of Sol's most sophisticated features is its handling of azimuth reversals in tropical and subtropical regions.
+One of Sol's most sophisticated features is its handling of azimuth reversals in tropical and subtropical regions—a phenomenon that's challenged other sun tracking integrations.
 
 ### What Are Azimuth Reversals?
 
-At latitudes within ±23.45° of the equator (the tropics), the sun doesn't always follow the typical east-to-west pattern across the sky. During certain times of the year, after the sun sets (or before it rises), its azimuth can reverse direction - briefly moving in the opposite direction, before continuing its normal path. These reversals typically occur at night when the sun is below the horizon.
+If you're within ±23.45° of the equator (the tropics), the sun doesn't always follow the typical east-to-west path across the sky. At certain times of year, after sunset (or before sunrise), the sun's azimuth can reverse direction—briefly moving backwards before continuing its normal path. These reversals usually happen at night when the sun's below the horizon.
 
 ### How Sol Handles This
 
 **Persistent Cache System:**
-- Maintains a rolling cache of the next 4 upcoming reversals
-- Stores cache in Home Assistant's persistent storage (survives reboots)
-- Automatically recalculates starting from previous solar noon for accuracy
+- Keeps a rolling cache of the next 4 upcoming reversals
+- Stores the cache in Home Assistant's persistent storage (survives reboots)
+- Automatically recalculates starting from the previous solar noon for accuracy
 
 **Intelligent Direction Detection:**
-- Samples direction at solar noon (when no reversals occur)
-- Tracks current direction by counting reversals since last known state
-- Updates cache automatically when reversals pass
+- Samples direction at solar noon (when no reversals happen)
+- Tracks current direction by counting reversals since the last known state
+- Updates cache automatically as reversals pass
 
 **Daily/Weekly Validation:**
 - Tropical locations (±23.45° latitude): Daily checks at midnight
 - Non-tropical locations: Weekly validation checks
-- Automatic adjustment as seasons change and sun's declination varies
+- Automatic adjustment as seasons change and the sun's declination varies
 
-This ensures accurate azimuth tracking year-round, regardless of latitude, power outages, or system reboots.
+This keeps azimuth tracking accurate year-round, no matter your latitude, power outages, or system reboots.
 
 ---
 
@@ -150,58 +150,58 @@ This ensures accurate azimuth tracking year-round, regardless of latitude, power
 1. Install Sol through HACS or manually
 2. Go to **Settings** → **Devices & Services** → **Add Integration**
 3. Search for "Sol" and select it
-4. Choose your location (use Home Assistant's location or specify a custom one)
-5. Optionally adjust elevation and atmospheric pressure settings
+4. Choose your location (use Home Assistant's location or specify your own)
+5. Optionally tweak elevation and atmospheric pressure settings
 
 ### Customizing Step Values
 
-You can adjust how frequently the position sensors update:
+You can adjust how often the position sensors update:
 
-- **Elevation Step**: How many degrees the sun must move vertically before updating (minimum 0.1)
-  - Smaller values (e.g., 0.1°) = more frequent updates, higher precision 
-  - Larger values (e.g., 2.0°) = fewer updates, lower resource usage
+- **Elevation Step**: How many degrees the sun needs to move vertically before updating (minimum 0.1)
+  - Smaller values (like 0.1°) = more frequent updates, higher precision 
+  - Larger values (like 2.0°) = fewer updates, less resource usage
   - Default: 0.5°
 
-- **Azimuth Step**: How many degrees the sun must move horizontally before updating
-  - Smaller values (e.g., 0.1°) = more frequent updates, higher precision (May cause problems in tropical regions)
-  - Larger values (e.g., 5.0°) = fewer updates, lower resource usage
+- **Azimuth Step**: How many degrees the sun needs to move horizontally before updating
+  - Smaller values (like 0.1°) = more frequent updates, higher precision (might cause issues in tropical regions)
+  - Larger values (like 5.0°) = fewer updates, less resource usage
   - Default: 1.0°
 
-**Recommendation**: Start with the defaults. Only decrease step values if you need higher precision for specific automations. Smaller azimuth steps in tropical regions may result in very frequent updates during reversal periods.
+**Recommendation**: Start with the defaults. Only decrease step values if you need higher precision for specific automations. Smaller azimuth steps in tropical areas might result in crazy frequent updates during reversal periods.
 
 ### Optional Sensors
 
-- **Solstice Curve**: Disabled by default, can be enabled in entity settings if you need seasonal tracking
+- **Declination Normalized**: Disabled by default—enable it in entity settings if you need seasonal tracking
 
 ---
 
 ## Technical Details
 
 ### Calculation Engine
-- **Library**: PyEphem 4.1.4+ (industry-standard astronomical calculations)
+- **Library**: PyEphem 4.1.4+ (industry-standard for astronomical calculations)
 - **Precision**: Sub-degree accuracy for all position data
 - **Time Handling**: All calculations respect your Home Assistant timezone
 
 ### Coordinate Systems
-- **Azimuth**: 0° = North, increasing clockwise (East = 90°, South = 180°, West = 270°)
-- **Elevation**: 0° = horizon, 90° = directly overhead (zenith), -90° = directly below (nadir)
+- **Azimuth**: 0° = North, increases clockwise (East = 90°, South = 180°, West = 270°)
+- **Elevation**: 0° = horizon, 90° = straight up (zenith), -90° = straight down (nadir)
 
 ### Update Strategy
-Sol uses event-driven updates rather than polling:
-- Position sensors calculate when the next threshold will be reached
+Sol uses event-driven updates instead of polling:
+- Position sensors calculate when the next threshold will be hit
 - Ternary search algorithm finds exact crossing times with sub-second accuracy
 - Reversal cache system pre-calculates direction changes
-- No unnecessary calculations or updates
+- No wasted calculations or updates
 
-This approach minimizes CPU usage while ensuring data is always current.
+This approach keeps CPU usage low while making sure your data's always current.
 
 ### Reversal Detection Algorithm
 
-For tropical locations, Sol uses a sophisticated two-phase approach:
+For tropical locations, Sol uses a two-phase approach:
 1. **Linear Scan**: Checks every 5 minutes for direction changes
 2. **Binary Search**: Refines reversal time to within 0.001° precision
 
-Reversals are cached with timestamps and automatically maintained as they pass, ensuring the azimuth sensor always knows which direction the sun is moving.
+Reversals get cached with timestamps and automatically maintained as they pass, so the azimuth sensor always knows which way the sun's moving.
 
 ---
 
@@ -244,7 +244,7 @@ For development or troubleshooting, you can enable detailed debug attributes by 
 DEBUG_ATTRIBUTES = True
 ```
 
-This exposes additional sensor attributes useful for understanding the integration's behavior, including:
+This exposes additional sensor attributes that are useful for understanding what the integration's doing, including:
 - Reversal cache details and future reversal times
 - Search performance metrics
 - Solar event cache information
@@ -265,7 +265,7 @@ TROPICAL_LATITUDE_THRESHOLD = 23.45  # Latitude threshold for tropical behavior
 
 - **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/Okkine/HA-Sol/issues)
 - **Discussions**: Ask questions or share ideas on [GitHub Discussions](https://github.com/Okkine/HA-Sol/discussions)
-- **Contributing**: Pull requests are welcome! Please read the contributing guidelines first.
+- **Contributing**: Pull requests welcome! Please read the contributing guidelines first.
 
 ---
 

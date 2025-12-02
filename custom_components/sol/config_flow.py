@@ -177,7 +177,8 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if az_step < 0.1 or el_step < 0.1:
                     errors["base"] = "step_too_low"
                 else:
-                    data = {**pending, "azimuth_step": az_step, "elevation_step": el_step}
+                    enable_solstice_curve = user_input.get("enable_solstice_curve", False)
+                    data = {**pending, "azimuth_step": az_step, "elevation_step": el_step, "enable_solstice_curve": enable_solstice_curve}
                     title = f"{DOMAIN.title()} - Solar Position Sensors" if pending["location_name"] is None else f"{DOMAIN.title()} - {pending['location_name'].title()} - Solar Position Sensors"
                     return self.async_create_entry(title=title, data=data)
             except (ValueError, TypeError):
@@ -187,6 +188,7 @@ class SolConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required("azimuth_step", default=azimuth_step): vol.Coerce(float),
                 vol.Required("elevation_step", default=elevation_step): vol.Coerce(float),
+                vol.Optional("enable_solstice_curve", default=False): bool,
             }),
             errors=errors,
         )
