@@ -8,6 +8,10 @@
 >
 > The PyEphem version had known stability issues and could occasionally crash Home Assistant in edge-case sun/observer geometry. This rewrite removes that dependency entirely.
 
+> [!NOTE]
+> ## Pre-release
+> This version is a **pre-release** for testing and feedback, not a final stable release. Expect possible changes before an official release. Back up your Home Assistant configuration before upgrading, and review automations and dashboards that reference Sol entity IDs.
+
 # HA-Sol
 
 *Humans have tracked the movements of the sun, moon, and planets since before written history — using them to mark the seasons, navigate oceans, plan harvests, and build calendars that still echo in the ones we use today. Sol — Latin for "sun", named for the Roman solar deity, and a nod to Sól, the Norse goddess who carries the sun across the sky — brings that same obsession to Home Assistant, with rather better tooling.*
@@ -91,7 +95,3 @@ Set `DEBUG_ATTRIBUTES = True` in `custom_components/sol/const.py` to expose inte
 ## Credits
 
 Powered by the excellent [Skyfield](https://rhodesmill.org/skyfield/) library.
-
----
-
-The main changes: mythology note up front and kept brief, passive voice and bureaucratic phrasing cut throughout, feature descriptions rewritten to explain *why* something matters rather than just what it is. The Declination Normalized description got a bit more love since it's the most conceptually unusual sensor and the original explanation was the stiffest part.
