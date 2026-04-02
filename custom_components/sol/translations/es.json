@@ -1,0 +1,131 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configuracion de Sol",
+        "description": "Elige como configurar tu ubicacion para el seguimiento de cuerpos celestes.",
+        "data": {
+          "location_type": "Tipo de ubicacion"
+        }
+      },
+      "location": {
+        "title": "Elegir ubicacion",
+        "description": "Selecciona una ubicacion en el mapa e introduce la elevacion en metros.",
+        "data": {
+          "location": "Ubicacion",
+          "elevation": "Elevacion (metros)",
+          "location_name": "Nombre de la ubicacion"
+        }
+      },
+      "bodies": {
+        "data": {
+          "enable_declination_normalized": "Activar el sensor de declinacion solar normalizada"
+        }
+      },
+      "body_sensors": {
+        "title": "Seleccion de sensores",
+        "description": "Elige que sensores habilitar para cada cuerpo seleccionado. Azimut y elevacion estan habilitados por defecto.",
+        "data": {
+          "sun_enable_az_el": "Sol: Azimut y Elevacion",
+          "sun_enable_rise_set": "Sol: Salida y Puesta",
+          "sun_enable_transit": "Sol: Transito y Antitransito",
+          "moon_enable_az_el": "Luna: Azimut y Elevacion",
+          "moon_enable_rise_set": "Luna: Salida y Puesta",
+          "moon_enable_transit": "Luna: Transito y Antitransito",
+          "moon_enable_phase": "Luna: Fase",
+          "moon_enable_phase_angle": "Luna: Angulo de fase",
+          "moon_enable_parallactic_angle": "Luna: Angulo paralactico",
+          "moon_naming_convention": "Luna llena: Convencion de nombres",
+          "mercury_enable_az_el": "Mercurio: Azimut y Elevacion",
+          "mercury_enable_rise_set": "Mercurio: Salida y Puesta",
+          "mercury_enable_transit": "Mercurio: Transito y Antitransito",
+          "venus_enable_az_el": "Venus: Azimut y Elevacion",
+          "venus_enable_rise_set": "Venus: Salida y Puesta",
+          "venus_enable_transit": "Venus: Transito y Antitransito",
+          "mars_enable_az_el": "Marte: Azimut y Elevacion",
+          "mars_enable_rise_set": "Marte: Salida y Puesta",
+          "mars_enable_transit": "Marte: Transito y Antitransito",
+          "jupiter_enable_az_el": "Jupiter: Azimut y Elevacion",
+          "jupiter_enable_rise_set": "Jupiter: Salida y Puesta",
+          "jupiter_enable_transit": "Jupiter: Transito y Antitransito",
+          "saturn_enable_az_el": "Saturno: Azimut y Elevacion",
+          "saturn_enable_rise_set": "Saturno: Salida y Puesta",
+          "saturn_enable_transit": "Saturno: Transito y Antitransito",
+          "uranus_enable_az_el": "Urano: Azimut y Elevacion",
+          "uranus_enable_rise_set": "Urano: Salida y Puesta",
+          "uranus_enable_transit": "Urano: Transito y Antitransito",
+          "neptune_enable_az_el": "Neptuno: Azimut y Elevacion",
+          "neptune_enable_rise_set": "Neptuno: Salida y Puesta",
+          "neptune_enable_transit": "Neptuno: Transito y Antitransito",
+          "pluto_enable_az_el": "Pluton: Azimut y Elevacion",
+          "pluto_enable_rise_set": "Pluton: Salida y Puesta",
+          "pluto_enable_transit": "Pluton: Transito y Antitransito"
+        }
+      }
+    },
+    "error": {
+      "invalid_location": "Ubicacion seleccionada no valida",
+      "cannot_connect": "No se pudo conectar",
+      "unknown": "Error inesperado",
+      "required": "Este campo es obligatorio",
+      "system_location_exists": "La ubicacion del sistema ya esta configurada",
+      "location_name_exists": "Ya existe una ubicacion con ese nombre",
+      "min_step_value": "El valor del paso debe ser un entero positivo, o un valor decimal entre 0 y 1 que divida 1 de forma exacta (p. ej., 0.5, 0.25, 0.2, 0.1)"
+    },
+    "abort": {
+      "already_configured": "El dispositivo ya esta configurado"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "enable_declination_normalized": "Activar el sensor de declinacion solar normalizada"
+        }
+      },
+      "body_sensors": {
+        "title": "Seleccion de sensores",
+        "description": "Elige que sensores habilitar para cada cuerpo seleccionado. Azimut y elevacion estan habilitados por defecto.",
+        "data": {
+          "sun_enable_az_el": "Sol: Azimut y Elevacion",
+          "sun_enable_rise_set": "Sol: Salida y Puesta",
+          "sun_enable_transit": "Sol: Transito y Antitransito",
+          "moon_enable_az_el": "Luna: Azimut y Elevacion",
+          "moon_enable_rise_set": "Luna: Salida y Puesta",
+          "moon_enable_transit": "Luna: Transito y Antitransito",
+          "moon_enable_phase": "Luna: Fase",
+          "moon_enable_phase_angle": "Luna: Angulo de fase",
+          "moon_enable_parallactic_angle": "Luna: Angulo paralactico",
+          "moon_naming_convention": "Luna llena: Convencion de nombres",
+          "mercury_enable_az_el": "Mercurio: Azimut y Elevacion",
+          "mercury_enable_rise_set": "Mercurio: Salida y Puesta",
+          "mercury_enable_transit": "Mercurio: Transito y Antitransito",
+          "venus_enable_az_el": "Venus: Azimut y Elevacion",
+          "venus_enable_rise_set": "Venus: Salida y Puesta",
+          "venus_enable_transit": "Venus: Transito y Antitransito",
+          "mars_enable_az_el": "Marte: Azimut y Elevacion",
+          "mars_enable_rise_set": "Marte: Salida y Puesta",
+          "mars_enable_transit": "Marte: Transito y Antitransito",
+          "jupiter_enable_az_el": "Jupiter: Azimut y Elevacion",
+          "jupiter_enable_rise_set": "Jupiter: Salida y Puesta",
+          "jupiter_enable_transit": "Jupiter: Transito y Antitransito",
+          "saturn_enable_az_el": "Saturno: Azimut y Elevacion",
+          "saturn_enable_rise_set": "Saturno: Salida y Puesta",
+          "saturn_enable_transit": "Saturno: Transito y Antitransito",
+          "uranus_enable_az_el": "Urano: Azimut y Elevacion",
+          "uranus_enable_rise_set": "Urano: Salida y Puesta",
+          "uranus_enable_transit": "Urano: Transito y Antitransito",
+          "neptune_enable_az_el": "Neptuno: Azimut y Elevacion",
+          "neptune_enable_rise_set": "Neptuno: Salida y Puesta",
+          "neptune_enable_transit": "Neptuno: Transito y Antitransito",
+          "pluto_enable_az_el": "Pluton: Azimut y Elevacion",
+          "pluto_enable_rise_set": "Pluton: Salida y Puesta",
+          "pluto_enable_transit": "Pluton: Transito y Antitransito"
+        }
+      }
+    },
+    "error": {
+      "min_step_value": "El valor del paso debe ser un entero positivo, o un valor decimal entre 0 y 1 que divida 1 de forma exacta (p. ej., 0.5, 0.25, 0.2, 0.1)"
+    }
+  }
+}

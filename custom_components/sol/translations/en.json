@@ -1,53 +1,131 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "Sol Configuration",
-                "description": "Choose how to configure your location for sun position tracking.",
-                "data": {
-                    "location_type": "Location Type"
-                }
-            },
-            "location": {
-                "title": "Choose Location",
-                "description": "Select a location on the map and enter elevation in meters.",
-                "data": {
-                    "location": "Location",
-                    "elevation": "Elevation (meters)",
-                    "location_name": "Location Name"
-                }
-            },
-            "update_steps": {
-                "title": "Configure Sensor Settings",
-                "description": "Set update step sizes and optional sensors.",
-                "data": {
-                    "azimuth_step": "Azimuth Step (degrees)",
-                    "elevation_step": "Elevation Step (degrees)",
-                    "enable_solstice_curve": "Enable Declination Normalized sensor"
-                }
-            }
-        },
-        "error": {
-            "invalid_location": "Invalid location selected",
-            "cannot_connect": "Failed to connect",
-            "unknown": "Unexpected error",
-            "required": "This field is required",
-            "system_location_exists": "System location is already configured",
-            "location_name_exists": "A location with this name already exists",
-            "step_too_low": "Azimuth and Elevation step values must be 0.1 or higher."
-        },
-        "abort": {
-            "already_configured": "Device is already configured"
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sol Configuration",
+        "description": "Choose how to configure your location for celestial body tracking.",
+        "data": {
+          "location_type": "Location Type"
         }
+      },
+      "location": {
+        "title": "Choose Location",
+        "description": "Select a location on the map and enter elevation in meters.",
+        "data": {
+          "location": "Location",
+          "elevation": "Elevation (meters)",
+          "location_name": "Location Name"
+        }
+      },
+      "bodies": {
+        "data": {
+          "enable_declination_normalized": "Enable Solar Declination Normalized sensor"
+        }
+      },
+      "body_sensors": {
+        "title": "Sensor Selection",
+        "description": "Choose which sensors to enable for each selected body. Azimuth & Elevation are enabled by default.",
+        "data": {
+          "sun_enable_az_el": "Sun: Azimuth & Elevation",
+          "sun_enable_rise_set": "Sun: Rise & Set",
+          "sun_enable_transit": "Sun: Transit & Antitransit",
+          "moon_enable_az_el": "Moon: Azimuth & Elevation",
+          "moon_enable_rise_set": "Moon: Rise & Set",
+          "moon_enable_transit": "Moon: Transit & Antitransit",
+          "moon_enable_phase": "Moon: Phase",
+          "moon_enable_phase_angle": "Moon: Phase Angle",
+          "moon_enable_parallactic_angle": "Moon: Parallactic Angle",
+          "moon_naming_convention": "Full Moon: Naming Convention",
+          "mercury_enable_az_el": "Mercury: Azimuth & Elevation",
+          "mercury_enable_rise_set": "Mercury: Rise & Set",
+          "mercury_enable_transit": "Mercury: Transit & Antitransit",
+          "venus_enable_az_el": "Venus: Azimuth & Elevation",
+          "venus_enable_rise_set": "Venus: Rise & Set",
+          "venus_enable_transit": "Venus: Transit & Antitransit",
+          "mars_enable_az_el": "Mars: Azimuth & Elevation",
+          "mars_enable_rise_set": "Mars: Rise & Set",
+          "mars_enable_transit": "Mars: Transit & Antitransit",
+          "jupiter_enable_az_el": "Jupiter: Azimuth & Elevation",
+          "jupiter_enable_rise_set": "Jupiter: Rise & Set",
+          "jupiter_enable_transit": "Jupiter: Transit & Antitransit",
+          "saturn_enable_az_el": "Saturn: Azimuth & Elevation",
+          "saturn_enable_rise_set": "Saturn: Rise & Set",
+          "saturn_enable_transit": "Saturn: Transit & Antitransit",
+          "uranus_enable_az_el": "Uranus: Azimuth & Elevation",
+          "uranus_enable_rise_set": "Uranus: Rise & Set",
+          "uranus_enable_transit": "Uranus: Transit & Antitransit",
+          "neptune_enable_az_el": "Neptune: Azimuth & Elevation",
+          "neptune_enable_rise_set": "Neptune: Rise & Set",
+          "neptune_enable_transit": "Neptune: Transit & Antitransit",
+          "pluto_enable_az_el": "Pluto: Azimuth & Elevation",
+          "pluto_enable_rise_set": "Pluto: Rise & Set",
+          "pluto_enable_transit": "Pluto: Transit & Antitransit"
+        }
+      }
     },
-    "options": {
-        "step": {
-            "init": {
-                "data": {
-                    "name": "Name"
-                },
-                "title": "Sol Options"
-            }
-        }
+    "error": {
+      "invalid_location": "Invalid location selected",
+      "cannot_connect": "Failed to connect",
+      "unknown": "Unexpected error",
+      "required": "This field is required",
+      "system_location_exists": "System location is already configured",
+      "location_name_exists": "A location with this name already exists",
+      "min_step_value": "Step value must be a positive integer, or a decimal between 0 and 1 that divides evenly into 1 (e.g. 0.5, 0.25, 0.2, 0.1)"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "enable_declination_normalized": "Enable Solar Declination Normalized sensor"
+        }
+      },
+      "body_sensors": {
+        "title": "Sensor Selection",
+        "description": "Choose which sensors to enable for each selected body. Azimuth & Elevation are enabled by default.",
+        "data": {
+          "sun_enable_az_el": "Sun: Azimuth & Elevation",
+          "sun_enable_rise_set": "Sun: Rise & Set",
+          "sun_enable_transit": "Sun: Transit & Antitransit",
+          "moon_enable_az_el": "Moon: Azimuth & Elevation",
+          "moon_enable_rise_set": "Moon: Rise & Set",
+          "moon_enable_transit": "Moon: Transit & Antitransit",
+          "moon_enable_phase": "Moon: Phase",
+          "moon_enable_phase_angle": "Moon: Phase Angle",
+          "moon_enable_parallactic_angle": "Moon: Parallactic Angle",
+          "moon_naming_convention": "Full Moon: Naming Convention",
+          "mercury_enable_az_el": "Mercury: Azimuth & Elevation",
+          "mercury_enable_rise_set": "Mercury: Rise & Set",
+          "mercury_enable_transit": "Mercury: Transit & Antitransit",
+          "venus_enable_az_el": "Venus: Azimuth & Elevation",
+          "venus_enable_rise_set": "Venus: Rise & Set",
+          "venus_enable_transit": "Venus: Transit & Antitransit",
+          "mars_enable_az_el": "Mars: Azimuth & Elevation",
+          "mars_enable_rise_set": "Mars: Rise & Set",
+          "mars_enable_transit": "Mars: Transit & Antitransit",
+          "jupiter_enable_az_el": "Jupiter: Azimuth & Elevation",
+          "jupiter_enable_rise_set": "Jupiter: Rise & Set",
+          "jupiter_enable_transit": "Jupiter: Transit & Antitransit",
+          "saturn_enable_az_el": "Saturn: Azimuth & Elevation",
+          "saturn_enable_rise_set": "Saturn: Rise & Set",
+          "saturn_enable_transit": "Saturn: Transit & Antitransit",
+          "uranus_enable_az_el": "Uranus: Azimuth & Elevation",
+          "uranus_enable_rise_set": "Uranus: Rise & Set",
+          "uranus_enable_transit": "Uranus: Transit & Antitransit",
+          "neptune_enable_az_el": "Neptune: Azimuth & Elevation",
+          "neptune_enable_rise_set": "Neptune: Rise & Set",
+          "neptune_enable_transit": "Neptune: Transit & Antitransit",
+          "pluto_enable_az_el": "Pluto: Azimuth & Elevation",
+          "pluto_enable_rise_set": "Pluto: Rise & Set",
+          "pluto_enable_transit": "Pluto: Transit & Antitransit"
+        }
+      }
+    },
+    "error": {
+      "min_step_value": "Step value must be a positive integer, or a decimal between 0 and 1 that divides evenly into 1 (e.g. 0.5, 0.25, 0.2, 0.1)"
+    }
+  }
 }

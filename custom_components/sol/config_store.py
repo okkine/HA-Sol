@@ -22,4 +22,4 @@ def remove_config_entry_data(entry_id: str):
     """Remove config data for a specific entry."""
     global _config_entry_data
     
-    _config_entry_data.pop(entry_id, None) 
+    _config_entry_data.pop(entry_id, None)

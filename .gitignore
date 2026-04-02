@@ -1,0 +1,11 @@
+# Skyfield ephemeris (large; download locally if needed)
+de421.bsp
+
+# Local dev only (not part of the integration package)
+update_ha.sh
+configuration.yaml
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
