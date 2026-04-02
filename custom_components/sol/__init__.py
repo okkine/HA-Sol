@@ -7,8 +7,11 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN, NAME
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 from .config_store import store_config_entry_data, remove_config_entry_data
 from .legacy_storage_cleanup import async_cleanup_legacy_notice_storage
 from .ephemeris_cache import EphemerisCacheManager

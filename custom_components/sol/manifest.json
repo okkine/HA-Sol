@@ -2,13 +2,15 @@
   "domain": "sol",
   "name": "Sol",
   "version": "2026.04.02",
-  "codeowners": [],
+  "codeowners": ["@okkine"],
   "requirements": ["skyfield", "ambiance"],
   "config_flow": true,
   "dependencies": [],
-  "iot_class": "local_polling"
+  "documentation": "https://github.com/okkine/ha-sol",
+  "homekit": {},
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/okkine/HA-Sol/issues",
+  "quality_scale": "bronze",
+  "ssdp": [],
+  "zeroconf": []
 }
-
-
-
-
