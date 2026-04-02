@@ -11,7 +11,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
-from homeassistant.components import persistent_notification
 
 from .const import DOMAIN, DEBUG_ELEVATION_SENSOR, DEBUG_AZIMUTH_SENSOR, DEBUG_ATTRIBUTES
 from .base_sensors import BaseElevationSensor, BaseAzimuthSensor, BasePositionSensor
@@ -585,21 +584,6 @@ class SolsticeCurveSensor(BasePositionSensor):
             
             # Mark as initialized
             self._initialized = True
-            
-            # Show deprecation warning notification when sensor initializes
-            notification_id = f"{DOMAIN}_solstice_curve_deprecation"
-            persistent_notification.create(
-                self.hass,
-                title="Sol: Solstice Curve Sensor Deprecated",
-                message=(
-                    "The 'Solstice Curve' sensor is deprecated and will be removed in a future version. "
-                    "Please use the 'Declination Normalized' sensor instead. "
-                    "The new sensor provides the same functionality with a -1 to +1 range "
-                    "(instead of 0 to 1) for better clarity.\n\n"
-                    "You can disable the old sensor in Settings > Devices & Services > Sol > Entities."
-                ),
-                notification_id=notification_id,
-            )
             
             
         except Exception as e:

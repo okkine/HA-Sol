@@ -1,3 +1,25 @@
+> [!WARNING]
+> ## Warning: Breaking Sol Update Arrives May 1, 2026
+>
+> This is the **final maintenance release** of the current PyEphem-based Sol integration.
+>
+> A fully rewritten version of Sol is scheduled for release on **May 1, 2026**.
+>
+> **What is changing**
+> - The new version replaces PyEphem with a new calculation engine to resolve edge-case instability at certain latitudes.
+> - The update is a **breaking change** — review automations and entity references.
+> - Sun tracking remains central, with expanded support for **Moon** and **planetary** tracking.
+>
+> **Entity naming (examples)**
+> - `sensor.sol_solar_elevation` -> `sensor.sol_sun_elevation`
+> - `sensor.sol_solar_azimuth` -> `sensor.sol_sun_azimuth`
+>
+> **Pre-release**
+> A pre-release is available for testing before the May 1 release:
+> **https://github.com/okkine/HA-Sol/releases**
+>
+> If you rely on Sol in production, please test the pre-release and update automations that reference old entity IDs.
+>
 # Sol - Sun Position & Seasonal Tracking for Home Assistant
 
 Sol is a Home Assistant integration that tracks the sun's position, seasonal changes, and astronomical events with precision. 
