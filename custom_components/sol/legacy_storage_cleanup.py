@@ -57,18 +57,28 @@ async def async_cleanup_legacy_notice_storage(hass: HomeAssistant) -> None:
     await _async_remove_stores_with_prefix(hass, _LUNA_AZIMUTH_REVERSALS_PREFIX)
 
 
+def _list_storage_keys_with_prefix(storage_dir: Path, prefix: str) -> list[str]:
+    """Sync filesystem scan; must run in executor (glob/scandir blocks the event loop)."""
+    if not storage_dir.is_dir():
+        return []
+    keys: list[str] = []
+    for path in sorted(storage_dir.glob(f"{prefix}*")):
+        if not path.is_file():
+            continue
+        key = path.name
+        if key.startswith(prefix):
+            keys.append(key)
+    return keys
+
+
 async def _async_remove_stores_with_prefix(hass: HomeAssistant, prefix: str) -> None:
     """Remove every Store in config/.storage whose key starts with ``prefix``."""
     try:
         storage_dir = Path(hass.config.path(".storage"))
-        if not storage_dir.is_dir():
-            return
-        for path in sorted(storage_dir.glob(f"{prefix}*")):
-            if not path.is_file():
-                continue
-            key = path.name
-            if not key.startswith(prefix):
-                continue
+        keys = await hass.async_add_executor_job(
+            _list_storage_keys_with_prefix, storage_dir, prefix
+        )
+        for key in keys:
             await _async_remove_store_if_exists(hass, key)
     except Exception as err:
         _LOGGER.debug("Legacy prefix cleanup for %s*: %s", prefix, err)
