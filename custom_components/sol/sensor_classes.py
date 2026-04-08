@@ -21,6 +21,11 @@ from .declination_cache import get_cached_declination_normalized
 
 _LOGGER = logging.getLogger(__name__)
 
+# Rise/set: backward search for last event before a time (days of history)
+_RISE_SET_PRIOR_WINDOW_DAYS = 14
+# Rise/set: forward search when calendar day has no event
+_RISE_SET_FORWARD_WINDOW_DAYS = 5
+
 
 def _prune_stale_step_candidates(
     items: list[dict[str, Any]],
@@ -989,32 +994,93 @@ class RiseSensor(SensorEntity):
             today_time = today_result if isinstance(today_result, datetime) else None
             tomorrow_time = tomorrow_result if isinstance(tomorrow_result, datetime) else None
 
-            # Get azimuth at today's rise time
-            rise_azimuth = None
+            state_basis = "today"
+            display_time: Optional[datetime] = None
+            following_rise: Optional[datetime] = None
+
             if today_time is not None:
-                _, az, _ = self._observer.position(today_time, apply_refraction=False)
+                display_time = today_time
+                state_basis = "today"
+            else:
+                # No rise in local calendar day: show next rise (often tomorrow's window)
+                state_basis = "next"
+                if tomorrow_time is not None:
+                    display_time = tomorrow_time
+                else:
+                    fwd = self._observer.get_time_at_elevation(
+                        target_elevation=0.0,
+                        direction=1,
+                        search_start=today_end,
+                        search_end=today_end + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+                        use_centre=use_centre_param,
+                    )
+                    display_time = fwd if isinstance(fwd, datetime) else None
+
+                if display_time is not None:
+                    nxt = self._observer.get_time_at_elevation(
+                        target_elevation=0.0,
+                        direction=1,
+                        search_start=display_time + timedelta(seconds=1),
+                        search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+                        use_centre=use_centre_param,
+                    )
+                    following_rise = nxt if isinstance(nxt, datetime) else None
+
+            rise_azimuth = None
+            if display_time is not None:
+                _, az, _ = self._observer.position(display_time, apply_refraction=False)
                 if az is not None:
                     rise_azimuth = round(float(az), 1)
             
-            # Get azimuth at tomorrow's rise time
             tomorrow_rise_azimuth = None
             if tomorrow_time is not None:
                 _, az, _ = self._observer.position(tomorrow_time, apply_refraction=False)
                 if az is not None:
                     tomorrow_rise_azimuth = round(float(az), 1)
 
-            # Set native value (today's time)
-            self._attr_native_value = today_time
-            
-            # Set attributes
+            previous_rise = None
+            next_attr: Optional[datetime] = None
+            if display_time is not None:
+                pr = self._observer.get_time_at_elevation(
+                    target_elevation=0.0,
+                    direction=1,
+                    search_start=display_time - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                    search_end=display_time - timedelta(seconds=1),
+                    use_centre=use_centre_param,
+                    take_last_match=True,
+                )
+                previous_rise = pr if isinstance(pr, datetime) else None
+
+                if state_basis == "today":
+                    if tomorrow_time is not None and tomorrow_time > display_time:
+                        next_attr = tomorrow_time
+                    else:
+                        na = self._observer.get_time_at_elevation(
+                            target_elevation=0.0,
+                            direction=1,
+                            search_start=display_time + timedelta(seconds=1),
+                            search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+                            use_centre=use_centre_param,
+                        )
+                        next_attr = na if isinstance(na, datetime) else None
+                else:
+                    next_attr = following_rise
+
+            if display_time is None:
+                state_basis = "none"
+
+            self._attr_native_value = display_time
             self._attr_extra_state_attributes = {
                 "today": today_time.isoformat() if today_time else None,
                 "tomorrow": tomorrow_time.isoformat() if tomorrow_time else None,
+                "previous": previous_rise.isoformat() if previous_rise else None,
+                "next": next_attr.isoformat() if next_attr else None,
+                "state_basis": state_basis,
                 "rise_azimuth": rise_azimuth,
                 "tomorrow_rise_azimuth": tomorrow_rise_azimuth,
             }
             
-            self._attr_available = True
+            self._attr_available = display_time is not None
             self.async_write_ha_state()
             
         except Exception as e:
@@ -1118,6 +1184,8 @@ class SetSensor(SensorEntity):
             # Use current time if not provided
             if now is None:
                 now = dt_util.now()
+
+            prior_native = self._attr_native_value
             
             # Create or reuse observer (create once, reuse for today's and tomorrow's calculations)
             if self._observer is None:
@@ -1165,32 +1233,79 @@ class SetSensor(SensorEntity):
             today_time = today_result if isinstance(today_result, datetime) else None
             tomorrow_time = tomorrow_result if isinstance(tomorrow_result, datetime) else None
 
-            # Get azimuth at today's set time
-            set_azimuth = None
+            state_basis = "today"
+            display_time: Optional[datetime] = None
+
             if today_time is not None:
-                _, az, _ = self._observer.position(today_time, apply_refraction=False)
+                display_time = today_time
+                state_basis = "today"
+            else:
+                state_basis = "previous"
+                if isinstance(prior_native, datetime) and prior_native < today_start:
+                    display_time = prior_native
+                else:
+                    prev = self._observer.get_time_at_elevation(
+                        target_elevation=0.0,
+                        direction=-1,
+                        search_start=today_start - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                        search_end=today_start,
+                        use_centre=use_centre_param,
+                        take_last_match=True,
+                    )
+                    display_time = prev if isinstance(prev, datetime) else None
+
+            set_azimuth = None
+            if display_time is not None:
+                _, az, _ = self._observer.position(display_time, apply_refraction=False)
                 if az is not None:
                     set_azimuth = round(float(az), 1)
             
-            # Get azimuth at tomorrow's set time
             tomorrow_set_azimuth = None
             if tomorrow_time is not None:
                 _, az, _ = self._observer.position(tomorrow_time, apply_refraction=False)
                 if az is not None:
                     tomorrow_set_azimuth = round(float(az), 1)
 
-            # Set native value (today's time)
-            self._attr_native_value = today_time
-            
-            # Set attributes
+            previous_set = None
+            next_set: Optional[datetime] = None
+            if display_time is not None:
+                ps = self._observer.get_time_at_elevation(
+                    target_elevation=0.0,
+                    direction=-1,
+                    search_start=display_time - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                    search_end=display_time - timedelta(seconds=1),
+                    use_centre=use_centre_param,
+                    take_last_match=True,
+                )
+                previous_set = ps if isinstance(ps, datetime) else None
+
+                if tomorrow_time is not None and tomorrow_time > display_time:
+                    next_set = tomorrow_time
+                else:
+                    ns = self._observer.get_time_at_elevation(
+                        target_elevation=0.0,
+                        direction=-1,
+                        search_start=display_time + timedelta(seconds=1),
+                        search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+                        use_centre=use_centre_param,
+                    )
+                    next_set = ns if isinstance(ns, datetime) else None
+
+            if display_time is None:
+                state_basis = "none"
+
+            self._attr_native_value = display_time
             self._attr_extra_state_attributes = {
                 "today": today_time.isoformat() if today_time else None,
                 "tomorrow": tomorrow_time.isoformat() if tomorrow_time else None,
+                "previous": previous_set.isoformat() if previous_set else None,
+                "next": next_set.isoformat() if next_set else None,
+                "state_basis": state_basis,
                 "set_azimuth": set_azimuth,
                 "tomorrow_set_azimuth": tomorrow_set_azimuth,
             }
             
-            self._attr_available = True
+            self._attr_available = display_time is not None
             self.async_write_ha_state()
             
         except Exception as e:

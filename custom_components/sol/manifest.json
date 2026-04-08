@@ -11,6 +11,6 @@
   "quality_scale": "bronze",
   "requirements": ["skyfield", "ambiance"],
   "ssdp": [],
-  "version": "2026.04.02",
+  "version": "2026.04.03",
   "zeroconf": []
 }

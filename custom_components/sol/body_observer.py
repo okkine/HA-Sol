@@ -1731,7 +1731,8 @@ class BodyObserver:
         search_end: Optional[datetime] = None,
         use_centre: bool = True,
         search_start: Optional[datetime] = None,
-        step_days: Optional[float] = None
+        step_days: Optional[float] = None,
+        take_last_match: bool = False,
     ) -> Optional[datetime] | str:
         """Get time when elevation reaches target value.
         
@@ -1742,6 +1743,7 @@ class BodyObserver:
             use_centre: If True, use center of body. If False, use leading edge (Sun/Moon only, defaults to True)
             search_start: Start time for search (defaults to self._search_start)
             step_days: Step size in days for find_discrete (defaults to 0.01, or 40% of time window if both search_start and search_end provided)
+            take_last_match: If True, return the last matching crossing in the window (chronologically); otherwise the first.
             
         Returns:
             Datetime when elevation reaches target, "Out of Range" if not found, or None on error
@@ -1792,23 +1794,20 @@ class BodyObserver:
                 #   We want False->True transitions (values[i] == True) = crossing from above to at/below target
                 # In both cases, we want transitions where values[i] == True
                 
-                # Find the first transition that matches our desired direction
-                # (i.e., where the new state is True, meaning we crossed in the desired direction)
-                crossing_time = None
+                # Collect transitions that match our desired direction (False->True = crossing in desired direction)
+                local_candidates: list[datetime] = []
                 for i, new_state in enumerate(values):
-                    if new_state:  # This is a False->True transition (crossing in our desired direction)
+                    if new_state:
                         crossing_time = times[i].utc_datetime()
-                        break
-                
-                if crossing_time is None:
-                    # No transition found in the desired direction
+                        if not crossing_time.tzinfo:
+                            crossing_time = crossing_time.replace(tzinfo=timezone.utc)
+                        local_candidates.append(self._convert_to_local_time(crossing_time))
+
+                if not local_candidates:
                     return "Out of Range"
-                
-                if not crossing_time.tzinfo:
-                    crossing_time = crossing_time.replace(tzinfo=timezone.utc)
-                
-                local_time = self._convert_to_local_time(crossing_time)
-                return local_time
+
+                picked = local_candidates[-1] if take_last_match else local_candidates[0]
+                return picked
             
             # No crossing found within search range
             return "Out of Range"
