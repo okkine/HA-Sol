@@ -51,7 +51,7 @@ DEBUG_ATTRIBUTES = False
 
 # Ephemeris cache schema version.
 # Bump this when persisted cache structure/semantics change.
-EPHEMERIS_CACHE_VERSION = 1
+EPHEMERIS_CACHE_VERSION = 0
 
 # Lunar Phase angle tolerance for find_discrete (~0.9 seconds precision)
 PHASE_ANGLE_TOLERANCE = 0.9 / 86400.0

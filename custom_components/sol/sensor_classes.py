@@ -1385,33 +1385,122 @@ class TransitSensor(SensorEntity):
                 now = dt_util.now()
 
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
             tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow_end = tomorrow_start + timedelta(days=1)
 
             if self._observer is None:
                 self._observer = BodyObserver(
                     entry_id=self._entry_id,
                     body=self._body,
                     search_start=today_start,
-                    search_end=tomorrow_start,
+                    search_end=tomorrow_end,
                     hass=self.hass,
                 )
+            else:
+                self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
 
             today_time = await self.hass.async_add_executor_job(
-                self._get_transit_for_window, today_start, tomorrow_start
+                self._get_transit_for_window, today_start, today_end
+            )
+            tomorrow_time = await self.hass.async_add_executor_job(
+                self._get_transit_for_window, tomorrow_start, tomorrow_end
             )
 
-            transit_elevation = None
+            state_basis = "today"
+            display_time: Optional[datetime] = None
+            following_transit: Optional[datetime] = None
+
             if today_time is not None:
-                el, _, _ = self._observer.position(today_time, apply_refraction=False)
+                display_time = today_time
+                state_basis = "today"
+            else:
+                # No transit in local calendar day: show next transit
+                state_basis = "next"
+                if tomorrow_time is not None:
+                    display_time = tomorrow_time
+                else:
+                    self._observer.set_search_window(
+                        search_start=today_end,
+                        search_end=today_end + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+                    )
+                    fwd = self._observer.next_transit
+                    display_time = fwd if isinstance(fwd, datetime) else None
+
+                if display_time is not None:
+                    self._observer.set_search_window(
+                        search_start=display_time + timedelta(seconds=1),
+                        search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+                    )
+                    nxt = self._observer.next_transit
+                    following_transit = nxt if isinstance(nxt, datetime) else None
+
+            transit_elevation = None
+            if display_time is not None:
+                el, _, _ = self._observer.position(display_time, apply_refraction=False)
                 if el is not None:
                     transit_elevation = round(float(el), 1)
 
-            self._attr_native_value = today_time
+            tomorrow_transit_elevation = None
+            if tomorrow_time is not None:
+                el, _, _ = self._observer.position(tomorrow_time, apply_refraction=False)
+                if el is not None:
+                    tomorrow_transit_elevation = round(float(el), 1)
+
+            previous_transit = None
+            next_attr: Optional[datetime] = None
+            if display_time is not None:
+                self._observer.set_search_window(
+                    search_start=display_time - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                    search_end=display_time - timedelta(seconds=1)
+                )
+                pr = self._observer.next_transit
+                # For previous, we want the last transit before display_time
+                # Since next_transit finds the first after search_start, we need to search backwards
+                # Use a helper method to find transits in a window and take the last one
+                if pr is not None and pr < display_time:
+                    # Keep searching forward until we find the last one before display_time
+                    last_found = pr
+                    search_pos = pr + timedelta(seconds=1)
+                    while search_pos < display_time:
+                        self._observer.set_search_window(
+                            search_start=search_pos,
+                            search_end=display_time - timedelta(seconds=1)
+                        )
+                        candidate = self._observer.next_transit
+                        if candidate is None or candidate >= display_time:
+                            break
+                        last_found = candidate
+                        search_pos = candidate + timedelta(seconds=1)
+                    previous_transit = last_found
+
+                if state_basis == "today":
+                    if tomorrow_time is not None and tomorrow_time > display_time:
+                        next_attr = tomorrow_time
+                    else:
+                        self._observer.set_search_window(
+                            search_start=display_time + timedelta(seconds=1),
+                            search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+                        )
+                        na = self._observer.next_transit
+                        next_attr = na if isinstance(na, datetime) else None
+                else:
+                    next_attr = following_transit
+
+            if display_time is None:
+                state_basis = "none"
+
+            self._attr_native_value = display_time
             self._attr_extra_state_attributes = {
                 "today": today_time.isoformat() if today_time else None,
+                "tomorrow": tomorrow_time.isoformat() if tomorrow_time else None,
+                "previous": previous_transit.isoformat() if previous_transit else None,
+                "next": next_attr.isoformat() if next_attr else None,
+                "state_basis": state_basis,
                 "transit_elevation": transit_elevation,
+                "tomorrow_transit_elevation": tomorrow_transit_elevation,
             }
-            self._attr_available = True
+            self._attr_available = display_time is not None
             self.async_write_ha_state()
 
         except Exception as e:
@@ -1490,34 +1579,126 @@ class AntitransitSensor(SensorEntity):
             if now is None:
                 now = dt_util.now()
 
+            prior_native = self._attr_native_value
+
             today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            today_end = today_start + timedelta(days=1)
             tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow_end = tomorrow_start + timedelta(days=1)
 
             if self._observer is None:
                 self._observer = BodyObserver(
                     entry_id=self._entry_id,
                     body=self._body,
                     search_start=today_start,
-                    search_end=tomorrow_start,
+                    search_end=tomorrow_end,
                     hass=self.hass,
                 )
+            else:
+                self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
 
             today_time = await self.hass.async_add_executor_job(
-                self._get_antitransit_for_window, today_start, tomorrow_start
+                self._get_antitransit_for_window, today_start, today_end
+            )
+            tomorrow_time = await self.hass.async_add_executor_job(
+                self._get_antitransit_for_window, tomorrow_start, tomorrow_end
             )
 
-            antitransit_elevation = None
+            state_basis = "today"
+            display_time: Optional[datetime] = None
+
             if today_time is not None:
-                el, _, _ = self._observer.position(today_time, apply_refraction=False)
+                display_time = today_time
+                state_basis = "today"
+            else:
+                # No antitransit in local calendar day: show previous antitransit
+                state_basis = "previous"
+                if isinstance(prior_native, datetime) and prior_native < today_start:
+                    display_time = prior_native
+                else:
+                    self._observer.set_search_window(
+                        search_start=today_start - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                        search_end=today_start
+                    )
+                    prev = self._observer.next_antitransit
+                    # Find the last antitransit before today_start
+                    if prev is not None and prev < today_start:
+                        last_found = prev
+                        search_pos = prev + timedelta(seconds=1)
+                        while search_pos < today_start:
+                            self._observer.set_search_window(
+                                search_start=search_pos,
+                                search_end=today_start
+                            )
+                            candidate = self._observer.next_antitransit
+                            if candidate is None or candidate >= today_start:
+                                break
+                            last_found = candidate
+                            search_pos = candidate + timedelta(seconds=1)
+                        display_time = last_found
+                    else:
+                        display_time = prev if isinstance(prev, datetime) else None
+
+            antitransit_elevation = None
+            if display_time is not None:
+                el, _, _ = self._observer.position(display_time, apply_refraction=False)
                 if el is not None:
                     antitransit_elevation = round(float(el), 1)
 
-            self._attr_native_value = today_time
+            tomorrow_antitransit_elevation = None
+            if tomorrow_time is not None:
+                el, _, _ = self._observer.position(tomorrow_time, apply_refraction=False)
+                if el is not None:
+                    tomorrow_antitransit_elevation = round(float(el), 1)
+
+            previous_antitransit = None
+            next_antitransit: Optional[datetime] = None
+            if display_time is not None:
+                self._observer.set_search_window(
+                    search_start=display_time - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                    search_end=display_time - timedelta(seconds=1)
+                )
+                ps = self._observer.next_antitransit
+                # Find the last antitransit before display_time
+                if ps is not None and ps < display_time:
+                    last_found = ps
+                    search_pos = ps + timedelta(seconds=1)
+                    while search_pos < display_time:
+                        self._observer.set_search_window(
+                            search_start=search_pos,
+                            search_end=display_time - timedelta(seconds=1)
+                        )
+                        candidate = self._observer.next_antitransit
+                        if candidate is None or candidate >= display_time:
+                            break
+                        last_found = candidate
+                        search_pos = candidate + timedelta(seconds=1)
+                    previous_antitransit = last_found
+
+                if tomorrow_time is not None and tomorrow_time > display_time:
+                    next_antitransit = tomorrow_time
+                else:
+                    self._observer.set_search_window(
+                        search_start=display_time + timedelta(seconds=1),
+                        search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+                    )
+                    ns = self._observer.next_antitransit
+                    next_antitransit = ns if isinstance(ns, datetime) else None
+
+            if display_time is None:
+                state_basis = "none"
+
+            self._attr_native_value = display_time
             self._attr_extra_state_attributes = {
                 "today": today_time.isoformat() if today_time else None,
+                "tomorrow": tomorrow_time.isoformat() if tomorrow_time else None,
+                "previous": previous_antitransit.isoformat() if previous_antitransit else None,
+                "next": next_antitransit.isoformat() if next_antitransit else None,
+                "state_basis": state_basis,
                 "antitransit_elevation": antitransit_elevation,
+                "tomorrow_antitransit_elevation": tomorrow_antitransit_elevation,
             }
-            self._attr_available = True
+            self._attr_available = display_time is not None
             self.async_write_ha_state()
 
         except Exception as e:
