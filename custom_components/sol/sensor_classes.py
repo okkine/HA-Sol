@@ -1038,33 +1038,30 @@ class RiseSensor(SensorEntity):
                 if az is not None:
                     tomorrow_rise_azimuth = round(float(az), 1)
 
+            # Calculate previous and next relative to "now", not display_time
             previous_rise = None
             next_attr: Optional[datetime] = None
-            if display_time is not None:
-                pr = self._observer.get_time_at_elevation(
-                    target_elevation=0.0,
-                    direction=1,
-                    search_start=display_time - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                    search_end=display_time - timedelta(seconds=1),
-                    use_centre=use_centre_param,
-                    take_last_match=True,
-                )
-                previous_rise = pr if isinstance(pr, datetime) else None
-
-                if state_basis == "today":
-                    if tomorrow_time is not None and tomorrow_time > display_time:
-                        next_attr = tomorrow_time
-                    else:
-                        na = self._observer.get_time_at_elevation(
-                            target_elevation=0.0,
-                            direction=1,
-                            search_start=display_time + timedelta(seconds=1),
-                            search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
-                            use_centre=use_centre_param,
-                        )
-                        next_attr = na if isinstance(na, datetime) else None
-                else:
-                    next_attr = following_rise
+            
+            # Previous: most recent past rise (before now)
+            pr = self._observer.get_time_at_elevation(
+                target_elevation=0.0,
+                direction=1,
+                search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                search_end=now - timedelta(seconds=1),
+                use_centre=use_centre_param,
+                take_last_match=True,
+            )
+            previous_rise = pr if isinstance(pr, datetime) else None
+            
+            # Next: next future rise (after now)
+            na = self._observer.get_time_at_elevation(
+                target_elevation=0.0,
+                direction=1,
+                search_start=now + timedelta(seconds=1),
+                search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+                use_centre=use_centre_param,
+            )
+            next_attr = na if isinstance(na, datetime) else None
 
             if display_time is None:
                 state_basis = "none"
@@ -1266,30 +1263,30 @@ class SetSensor(SensorEntity):
                 if az is not None:
                     tomorrow_set_azimuth = round(float(az), 1)
 
+            # Calculate previous and next relative to "now", not display_time
             previous_set = None
             next_set: Optional[datetime] = None
-            if display_time is not None:
-                ps = self._observer.get_time_at_elevation(
-                    target_elevation=0.0,
-                    direction=-1,
-                    search_start=display_time - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                    search_end=display_time - timedelta(seconds=1),
-                    use_centre=use_centre_param,
-                    take_last_match=True,
-                )
-                previous_set = ps if isinstance(ps, datetime) else None
-
-                if tomorrow_time is not None and tomorrow_time > display_time:
-                    next_set = tomorrow_time
-                else:
-                    ns = self._observer.get_time_at_elevation(
-                        target_elevation=0.0,
-                        direction=-1,
-                        search_start=display_time + timedelta(seconds=1),
-                        search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
-                        use_centre=use_centre_param,
-                    )
-                    next_set = ns if isinstance(ns, datetime) else None
+            
+            # Previous: most recent past set (before now)
+            ps = self._observer.get_time_at_elevation(
+                target_elevation=0.0,
+                direction=-1,
+                search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                search_end=now - timedelta(seconds=1),
+                use_centre=use_centre_param,
+                take_last_match=True,
+            )
+            previous_set = ps if isinstance(ps, datetime) else None
+            
+            # Next: next future set (after now)
+            ns = self._observer.get_time_at_elevation(
+                target_elevation=0.0,
+                direction=-1,
+                search_start=now + timedelta(seconds=1),
+                search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+                use_centre=use_centre_param,
+            )
+            next_set = ns if isinstance(ns, datetime) else None
 
             if display_time is None:
                 state_basis = "none"
@@ -1447,45 +1444,38 @@ class TransitSensor(SensorEntity):
                 if el is not None:
                     tomorrow_transit_elevation = round(float(el), 1)
 
+            # Calculate previous and next relative to "now", not display_time
             previous_transit = None
             next_attr: Optional[datetime] = None
-            if display_time is not None:
-                self._observer.set_search_window(
-                    search_start=display_time - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                    search_end=display_time - timedelta(seconds=1)
-                )
-                pr = self._observer.next_transit
-                # For previous, we want the last transit before display_time
-                # Since next_transit finds the first after search_start, we need to search backwards
-                # Use a helper method to find transits in a window and take the last one
-                if pr is not None and pr < display_time:
-                    # Keep searching forward until we find the last one before display_time
-                    last_found = pr
-                    search_pos = pr + timedelta(seconds=1)
-                    while search_pos < display_time:
-                        self._observer.set_search_window(
-                            search_start=search_pos,
-                            search_end=display_time - timedelta(seconds=1)
-                        )
-                        candidate = self._observer.next_transit
-                        if candidate is None or candidate >= display_time:
-                            break
-                        last_found = candidate
-                        search_pos = candidate + timedelta(seconds=1)
-                    previous_transit = last_found
-
-                if state_basis == "today":
-                    if tomorrow_time is not None and tomorrow_time > display_time:
-                        next_attr = tomorrow_time
-                    else:
-                        self._observer.set_search_window(
-                            search_start=display_time + timedelta(seconds=1),
-                            search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
-                        )
-                        na = self._observer.next_transit
-                        next_attr = na if isinstance(na, datetime) else None
-                else:
-                    next_attr = following_transit
+            
+            # Previous: most recent past transit (before now)
+            self._observer.set_search_window(
+                search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                search_end=now - timedelta(seconds=1)
+            )
+            pr = self._observer.next_transit
+            if pr is not None and pr < now:
+                # Keep searching forward until we find the last one before now
+                last_found = pr
+                search_pos = pr + timedelta(seconds=1)
+                while search_pos < now:
+                    self._observer.set_search_window(
+                        search_start=search_pos,
+                        search_end=now - timedelta(seconds=1)
+                    )
+                    candidate = self._observer.next_transit
+                    if candidate is None or candidate >= now:
+                        break
+                    last_found = candidate
+                    search_pos = candidate + timedelta(seconds=1)
+                previous_transit = last_found
+            
+            # Next: next future transit (after now)
+            self._observer.set_search_window(
+                search_start=now + timedelta(seconds=1),
+                search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+            )
+            next_attr = self._observer.next_transit
 
             if display_time is None:
                 state_basis = "none"
@@ -1651,39 +1641,38 @@ class AntitransitSensor(SensorEntity):
                 if el is not None:
                     tomorrow_antitransit_elevation = round(float(el), 1)
 
+            # Calculate previous and next relative to "now", not display_time
             previous_antitransit = None
             next_antitransit: Optional[datetime] = None
-            if display_time is not None:
-                self._observer.set_search_window(
-                    search_start=display_time - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                    search_end=display_time - timedelta(seconds=1)
-                )
-                ps = self._observer.next_antitransit
-                # Find the last antitransit before display_time
-                if ps is not None and ps < display_time:
-                    last_found = ps
-                    search_pos = ps + timedelta(seconds=1)
-                    while search_pos < display_time:
-                        self._observer.set_search_window(
-                            search_start=search_pos,
-                            search_end=display_time - timedelta(seconds=1)
-                        )
-                        candidate = self._observer.next_antitransit
-                        if candidate is None or candidate >= display_time:
-                            break
-                        last_found = candidate
-                        search_pos = candidate + timedelta(seconds=1)
-                    previous_antitransit = last_found
-
-                if tomorrow_time is not None and tomorrow_time > display_time:
-                    next_antitransit = tomorrow_time
-                else:
+            
+            # Previous: most recent past antitransit (before now)
+            self._observer.set_search_window(
+                search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                search_end=now - timedelta(seconds=1)
+            )
+            ps = self._observer.next_antitransit
+            if ps is not None and ps < now:
+                # Keep searching forward until we find the last one before now
+                last_found = ps
+                search_pos = ps + timedelta(seconds=1)
+                while search_pos < now:
                     self._observer.set_search_window(
-                        search_start=display_time + timedelta(seconds=1),
-                        search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+                        search_start=search_pos,
+                        search_end=now - timedelta(seconds=1)
                     )
-                    ns = self._observer.next_antitransit
-                    next_antitransit = ns if isinstance(ns, datetime) else None
+                    candidate = self._observer.next_antitransit
+                    if candidate is None or candidate >= now:
+                        break
+                    last_found = candidate
+                    search_pos = candidate + timedelta(seconds=1)
+                previous_antitransit = last_found
+            
+            # Next: next future antitransit (after now)
+            self._observer.set_search_window(
+                search_start=now + timedelta(seconds=1),
+                search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+            )
+            next_antitransit = self._observer.next_antitransit
 
             if display_time is None:
                 state_basis = "none"
