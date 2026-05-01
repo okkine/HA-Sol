@@ -8,9 +8,6 @@
 >
 > The PyEphem version had known stability issues and could occasionally crash Home Assistant in edge-case sun/observer geometry. This rewrite removes that dependency entirely.
 
-> [!NOTE]
-> ## Pre-release
-> This version is a **pre-release** for testing and feedback, not a final stable release. Expect possible changes before an official release. Back up your Home Assistant configuration before upgrading, and review automations and dashboards that reference Sol entity IDs.
 
 # HA-Sol
 
