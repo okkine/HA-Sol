@@ -7,9 +7,6 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
-# FIXED: Changed from {} to grant the token permission to keep this workflow alive via API
-permissions: write-all
-
 
 jobs:
   validate-hacs:
@@ -27,13 +24,3 @@ jobs:
       - uses: "home-assistant/actions/hassfest@master"
 
   # APPENDED: This job automatically runs to refresh the 60-day inactivity timer
-  prevent-disabling:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Prevent GitHub from disabling this workflow
-        uses: liskin/gh-workflow-keepalive@v1
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
