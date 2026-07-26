@@ -8,10 +8,8 @@ on:
   workflow_dispatch:
 
 # FIXED: Changed from {} to grant the token permission to keep this workflow alive via API
-permissions:
-  actions: write
-  contents: read
-  workflows: write
+permissions: write-all
+
 
 jobs:
   validate-hacs:
