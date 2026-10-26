@@ -1,7 +1,9 @@
 {
   "domain": "sol",
   "name": "Sol",
-  "codeowners": ["@okkine"],
+  "codeowners": [
+    "@okkine"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/okkine/ha-sol",
@@ -9,8 +11,11 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/okkine/HA-Sol/issues",
   "quality_scale": "bronze",
-  "requirements": ["skyfield", "ambiance"],
+  "requirements": [
+    "skyfield",
+    "ambiance"
+  ],
   "ssdp": [],
-  "version": "2026.05.01",
+  "version": "2026.10.26",
   "zeroconf": []
 }

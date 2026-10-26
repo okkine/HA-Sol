@@ -1,3 +1,11 @@
+> [!NOTE]
+> ## Fork maintained by JI ENGINEERING
+> This is a fork of [okkine/HA-Sol](https://github.com/okkine/HA-Sol) that carries a fix for an
+> infinite loop which blocks the Home Assistant event loop for two weeks after every DST change
+> ([okkine/HA-Sol#3](https://github.com/okkine/HA-Sol/issues/3),
+> [PR okkine/HA-Sol#4](https://github.com/okkine/HA-Sol/pull/4)).
+> It exists only until that fix is merged upstream; everything else is unchanged.
+
 > [!WARNING]
 > ## Breaking Change (PyEphem → Skyfield Rewrite)
 > This release is a full rewrite of the previous `Sol` integration.

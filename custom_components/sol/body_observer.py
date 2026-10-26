@@ -18,6 +18,18 @@ from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
+# Skyfield's own meridian_transits() ships step_days = 0.4, half the ~0.5 day
+# spacing between an upper and a lower transit. Scaling the step with the search
+# window makes a window longer than a day alias past whole transits, so the
+# window may only shrink the step, never grow it.
+_MERIDIAN_STEP_DAYS = 0.4
+
+
+def _meridian_step_days(window_days: float) -> float:
+    """Return the find_discrete step for a meridian transit search."""
+    return min(_MERIDIAN_STEP_DAYS, _MERIDIAN_STEP_DAYS * window_days)
+
+
 
 class BodyObserver:
     """Observer for calculating celestial body positions and events."""
@@ -500,9 +512,8 @@ class BodyObserver:
         try:
             # Find meridian transits (returns both upper and lower)
             f = almanac.meridian_transits(self._eph, self._body, self._observer_location)
-            # Calculate step_days as 40% of search window
             window_days = (self._search_end - self._search_start).total_seconds() / 86400.0
-            f.step_days = 0.4 * window_days
+            f.step_days = _meridian_step_days(window_days)
             times, is_upper = almanac.find_discrete(self._t0, self._t1, f)
             
             if len(times) > 0:
@@ -527,9 +538,8 @@ class BodyObserver:
             t_prev_end = self._t0
             
             f = almanac.meridian_transits(self._eph, self._body, self._observer_location)
-            # Calculate step_days as 40% of search window (same as next_transit)
             window_days = self._window_duration.total_seconds() / 86400.0
-            f.step_days = 0.4 * window_days
+            f.step_days = _meridian_step_days(window_days)
             times, is_upper = almanac.find_discrete(t_prev_start, t_prev_end, f)
             
             if len(times) > 0:
@@ -551,9 +561,8 @@ class BodyObserver:
         try:
             # Find meridian transits (returns both upper and lower)
             f = almanac.meridian_transits(self._eph, self._body, self._observer_location)
-            # Calculate step_days as 40% of search window
             window_days = (self._search_end - self._search_start).total_seconds() / 86400.0
-            f.step_days = 0.4 * window_days
+            f.step_days = _meridian_step_days(window_days)
             times, is_upper = almanac.find_discrete(self._t0, self._t1, f)
             
             if len(times) > 0:
@@ -578,9 +587,8 @@ class BodyObserver:
             t_prev_end = self._t0
             
             f = almanac.meridian_transits(self._eph, self._body, self._observer_location)
-            # Calculate step_days as 40% of search window (same as next_antitransit)
             window_days = self._window_duration.total_seconds() / 86400.0
-            f.step_days = 0.4 * window_days
+            f.step_days = _meridian_step_days(window_days)
             times, is_upper = almanac.find_discrete(t_prev_start, t_prev_end, f)
             
             if len(times) > 0:
