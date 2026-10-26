@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from homeassistant.components.sensor import SensorEntity
@@ -69,6 +69,21 @@ def _merge_step_candidates_min_gap(
         # both non-cap: keep earlier
         continue
     return out
+
+
+def _advance_one_second(moment: datetime) -> datetime:
+    """Step one second forward in ABSOLUTE time.
+
+    2026-10-25 (JI): adding a timedelta to an aware datetime is wall-clock
+    arithmetic and resets `fold`, so inside the autumn DST fold
+    `moment + timedelta(seconds=1)` can land a full hour BEFORE `moment`.
+    The three `while search_pos < ...` loops below then re-find the same
+    transit for ever and block the whole Home Assistant event loop.
+    Converting to UTC first keeps the step monotonic.
+    """
+    if moment.tzinfo is None:
+        return moment + timedelta(seconds=1)
+    return (moment.astimezone(timezone.utc) + timedelta(seconds=1)).astimezone(moment.tzinfo)
 
 
 def _trim_refill_leading_too_close(
@@ -1457,7 +1472,7 @@ class TransitSensor(SensorEntity):
             if pr is not None and pr < now:
                 # Keep searching forward until we find the last one before now
                 last_found = pr
-                search_pos = pr + timedelta(seconds=1)
+                search_pos = _advance_one_second(pr)
                 while search_pos < now:
                     self._observer.set_search_window(
                         search_start=search_pos,
@@ -1466,8 +1481,10 @@ class TransitSensor(SensorEntity):
                     candidate = self._observer.next_transit
                     if candidate is None or candidate >= now:
                         break
+                    if candidate <= last_found:
+                        break
                     last_found = candidate
-                    search_pos = candidate + timedelta(seconds=1)
+                    search_pos = _advance_one_second(candidate)
                 previous_transit = last_found
             
             # Next: next future transit (after now)
@@ -1614,7 +1631,7 @@ class AntitransitSensor(SensorEntity):
                     # Find the last antitransit before today_start
                     if prev is not None and prev < today_start:
                         last_found = prev
-                        search_pos = prev + timedelta(seconds=1)
+                        search_pos = _advance_one_second(prev)
                         while search_pos < today_start:
                             self._observer.set_search_window(
                                 search_start=search_pos,
@@ -1623,8 +1640,10 @@ class AntitransitSensor(SensorEntity):
                             candidate = self._observer.next_antitransit
                             if candidate is None or candidate >= today_start:
                                 break
+                            if candidate <= last_found:
+                                break
                             last_found = candidate
-                            search_pos = candidate + timedelta(seconds=1)
+                            search_pos = _advance_one_second(candidate)
                         display_time = last_found
                     else:
                         display_time = prev if isinstance(prev, datetime) else None
@@ -1654,7 +1673,7 @@ class AntitransitSensor(SensorEntity):
             if ps is not None and ps < now:
                 # Keep searching forward until we find the last one before now
                 last_found = ps
-                search_pos = ps + timedelta(seconds=1)
+                search_pos = _advance_one_second(ps)
                 while search_pos < now:
                     self._observer.set_search_window(
                         search_start=search_pos,
@@ -1663,8 +1682,10 @@ class AntitransitSensor(SensorEntity):
                     candidate = self._observer.next_antitransit
                     if candidate is None or candidate >= now:
                         break
+                    if candidate <= last_found:
+                        break
                     last_found = candidate
-                    search_pos = candidate + timedelta(seconds=1)
+                    search_pos = _advance_one_second(candidate)
                 previous_antitransit = last_found
             
             # Next: next future antitransit (after now)
