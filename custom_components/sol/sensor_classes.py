@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from functools import partial
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -265,14 +266,17 @@ class AzimuthSensor(SensorEntity):
                     )
                     cap_time = cap_checkpoint["time"] if cap_checkpoint else None
                     refill_iteration_start = time.perf_counter()
-                    refill_candidates = self._observer.find_step_aligned_targets(
-                        quantity="azimuth",
-                        step_value=step_value,
-                        direction=direction,
-                        search_start=refill_start,
-                        search_window_hours=AZIMUTH_SEARCH_WINDOW_HOURS,
-                        cap_time=cap_time,
-                        ephemeris_checkpoints=cache.get("checkpoints") if cache else None,
+                    refill_candidates = await self.hass.async_add_executor_job(
+                        partial(
+                            self._observer.find_step_aligned_targets,
+                            quantity="azimuth",
+                            step_value=step_value,
+                            direction=direction,
+                            search_start=refill_start,
+                            search_window_hours=AZIMUTH_SEARCH_WINDOW_HOURS,
+                            cap_time=cap_time,
+                            ephemeris_checkpoints=cache.get("checkpoints") if cache else None,
+                        )
                     )
                     refill_elapsed_ms = (time.perf_counter() - refill_iteration_start) * 1000.0
                     refresh_search_total_time_ms += refill_elapsed_ms
@@ -315,14 +319,17 @@ class AzimuthSensor(SensorEntity):
                 )
                 cap_time = cap_checkpoint["time"] if cap_checkpoint else None
                 iteration_start = time.perf_counter()
-                candidates = self._observer.find_step_aligned_targets(
-                    quantity="azimuth",
-                    step_value=step_value,
-                    direction=direction,
-                    search_start=now,
-                    search_window_hours=AZIMUTH_SEARCH_WINDOW_HOURS,
-                    cap_time=cap_time,
-                    ephemeris_checkpoints=cache.get("checkpoints") if cache else None,
+                candidates = await self.hass.async_add_executor_job(
+                    partial(
+                        self._observer.find_step_aligned_targets,
+                        quantity="azimuth",
+                        step_value=step_value,
+                        direction=direction,
+                        search_start=now,
+                        search_window_hours=AZIMUTH_SEARCH_WINDOW_HOURS,
+                        cap_time=cap_time,
+                        ephemeris_checkpoints=cache.get("checkpoints") if cache else None,
+                    )
                 )
                 search_elapsed_ms = (time.perf_counter() - iteration_start) * 1000.0
                 refresh_search_total_time_ms += search_elapsed_ms
@@ -657,14 +664,17 @@ class ElevationSensor(SensorEntity):
                     else:
                         refill_start = refill_anchor + timedelta(seconds=1)
                     refill_iteration_start = time.perf_counter()
-                    refill_candidates = self._observer.find_step_aligned_targets(
-                        quantity="elevation",
-                        step_value=step_value,
-                        direction=direction,
-                        search_start=refill_start,
-                        search_window_hours=ELEVATION_SEARCH_WINDOW_HOURS,
-                        cap_time=next_event,
-                        cap_value=next_event_elevation,
+                    refill_candidates = await self.hass.async_add_executor_job(
+                        partial(
+                            self._observer.find_step_aligned_targets,
+                            quantity="elevation",
+                            step_value=step_value,
+                            direction=direction,
+                            search_start=refill_start,
+                            search_window_hours=ELEVATION_SEARCH_WINDOW_HOURS,
+                            cap_time=next_event,
+                            cap_value=next_event_elevation,
+                        )
                     )
                     refill_elapsed_ms = (time.perf_counter() - refill_iteration_start) * 1000.0
                     refresh_search_total_time_ms += refill_elapsed_ms
@@ -698,14 +708,17 @@ class ElevationSensor(SensorEntity):
                     )
             else:
                 iteration_start = time.perf_counter()
-                candidates = self._observer.find_step_aligned_targets(
-                    quantity="elevation",
-                    step_value=step_value,
-                    direction=direction,
-                    search_start=now,
-                    search_window_hours=ELEVATION_SEARCH_WINDOW_HOURS,
-                    cap_time=next_event,
-                    cap_value=next_event_elevation,
+                candidates = await self.hass.async_add_executor_job(
+                    partial(
+                        self._observer.find_step_aligned_targets,
+                        quantity="elevation",
+                        step_value=step_value,
+                        direction=direction,
+                        search_start=now,
+                        search_window_hours=ELEVATION_SEARCH_WINDOW_HOURS,
+                        cap_time=next_event,
+                        cap_value=next_event_elevation,
+                    )
                 )
                 search_elapsed_ms = (time.perf_counter() - iteration_start) * 1000.0
                 refresh_search_total_time_ms += search_elapsed_ms
@@ -956,145 +969,159 @@ class RiseSensor(SensorEntity):
         # Schedule next midnight
         self._schedule_midnight_update(now)
     
+    def _compute(self, now: datetime) -> dict:
+        """Run the rise searches. Called in the executor, never on the loop."""
+        # Create or reuse observer (create once, reuse for today's and tomorrow's calculations)
+        if self._observer is None:
+            # Create observer with wide search window (today to tomorrow)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow_end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+            self._observer = BodyObserver(
+                entry_id=self._entry_id,
+                body=self._body,
+                search_start=today_start,
+                search_end=tomorrow_end,
+                hass=self.hass
+            )
+        else:
+            # Update search window if needed
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow_end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+            self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
+        
+        # Calculate date ranges for today and tomorrow
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_end = tomorrow_start + timedelta(days=1)
+        
+        # Get rise times for today and tomorrow using the same observer
+        # use_centre=False only for Sun/Moon
+        use_centre_param = self._body_key not in ["sun", "moon"]
+        today_result = self._observer.get_time_at_elevation(
+            target_elevation=0.0,
+            direction=1,
+            search_start=today_start,
+            search_end=today_end,
+            use_centre=use_centre_param
+        )
+        tomorrow_result = self._observer.get_time_at_elevation(
+            target_elevation=0.0,
+            direction=1,
+            search_start=tomorrow_start,
+            search_end=tomorrow_end,
+            use_centre=use_centre_param
+        )
+        
+        # Convert results
+        today_time = today_result if isinstance(today_result, datetime) else None
+        tomorrow_time = tomorrow_result if isinstance(tomorrow_result, datetime) else None
+
+        state_basis = "today"
+        display_time: Optional[datetime] = None
+        following_rise: Optional[datetime] = None
+
+        if today_time is not None:
+            display_time = today_time
+            state_basis = "today"
+        else:
+            # No rise in local calendar day: show next rise (often tomorrow's window)
+            state_basis = "next"
+            if tomorrow_time is not None:
+                display_time = tomorrow_time
+            else:
+                fwd = self._observer.get_time_at_elevation(
+                    target_elevation=0.0,
+                    direction=1,
+                    search_start=today_end,
+                    search_end=today_end + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+                    use_centre=use_centre_param,
+                )
+                display_time = fwd if isinstance(fwd, datetime) else None
+
+            if display_time is not None:
+                nxt = self._observer.get_time_at_elevation(
+                    target_elevation=0.0,
+                    direction=1,
+                    search_start=display_time + timedelta(seconds=1),
+                    search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+                    use_centre=use_centre_param,
+                )
+                following_rise = nxt if isinstance(nxt, datetime) else None
+
+        rise_azimuth = None
+        if display_time is not None:
+            _, az, _ = self._observer.position(display_time, apply_refraction=False)
+            if az is not None:
+                rise_azimuth = round(float(az), 1)
+        
+        tomorrow_rise_azimuth = None
+        if tomorrow_time is not None:
+            _, az, _ = self._observer.position(tomorrow_time, apply_refraction=False)
+            if az is not None:
+                tomorrow_rise_azimuth = round(float(az), 1)
+
+        # Calculate previous and next relative to "now", not display_time
+        previous_rise = None
+        next_attr: Optional[datetime] = None
+        
+        # Previous: most recent past rise (before now)
+        pr = self._observer.get_time_at_elevation(
+            target_elevation=0.0,
+            direction=1,
+            search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+            search_end=now - timedelta(seconds=1),
+            use_centre=use_centre_param,
+            take_last_match=True,
+        )
+        previous_rise = pr if isinstance(pr, datetime) else None
+        
+        # Next: next future rise (after now)
+        na = self._observer.get_time_at_elevation(
+            target_elevation=0.0,
+            direction=1,
+            search_start=now + timedelta(seconds=1),
+            search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+            use_centre=use_centre_param,
+        )
+        next_attr = na if isinstance(na, datetime) else None
+
+        if display_time is None:
+            state_basis = "none"
+
+        return {
+            "display_time": display_time,
+            "today_time": today_time,
+            "tomorrow_time": tomorrow_time,
+            "previous_rise": previous_rise,
+            "next_attr": next_attr,
+            "state_basis": state_basis,
+            "rise_azimuth": rise_azimuth,
+            "tomorrow_rise_azimuth": tomorrow_rise_azimuth,
+        }
+
     async def async_update(self, now=None) -> None:
         """Update the sensor state."""
         try:
-            # Use current time if not provided
             if now is None:
                 now = dt_util.now()
-            
-            # Create or reuse observer (create once, reuse for today's and tomorrow's calculations)
-            if self._observer is None:
-                # Create observer with wide search window (today to tomorrow)
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                tomorrow_end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
-                self._observer = BodyObserver(
-                    entry_id=self._entry_id,
-                    body=self._body,
-                    search_start=today_start,
-                    search_end=tomorrow_end,
-                    hass=self.hass
-                )
-            else:
-                # Update search window if needed
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                tomorrow_end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
-                self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
-            
-            # Calculate date ranges for today and tomorrow
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = today_start + timedelta(days=1)
-            tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-            tomorrow_end = tomorrow_start + timedelta(days=1)
-            
-            # Get rise times for today and tomorrow using the same observer
-            # use_centre=False only for Sun/Moon
-            use_centre_param = self._body_key not in ["sun", "moon"]
-            today_result = self._observer.get_time_at_elevation(
-                target_elevation=0.0,
-                direction=1,
-                search_start=today_start,
-                search_end=today_end,
-                use_centre=use_centre_param
-            )
-            tomorrow_result = self._observer.get_time_at_elevation(
-                target_elevation=0.0,
-                direction=1,
-                search_start=tomorrow_start,
-                search_end=tomorrow_end,
-                use_centre=use_centre_param
-            )
-            
-            # Convert results
-            today_time = today_result if isinstance(today_result, datetime) else None
-            tomorrow_time = tomorrow_result if isinstance(tomorrow_result, datetime) else None
 
-            state_basis = "today"
-            display_time: Optional[datetime] = None
-            following_rise: Optional[datetime] = None
+            data = await self.hass.async_add_executor_job(self._compute, now)
 
-            if today_time is not None:
-                display_time = today_time
-                state_basis = "today"
-            else:
-                # No rise in local calendar day: show next rise (often tomorrow's window)
-                state_basis = "next"
-                if tomorrow_time is not None:
-                    display_time = tomorrow_time
-                else:
-                    fwd = self._observer.get_time_at_elevation(
-                        target_elevation=0.0,
-                        direction=1,
-                        search_start=today_end,
-                        search_end=today_end + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
-                        use_centre=use_centre_param,
-                    )
-                    display_time = fwd if isinstance(fwd, datetime) else None
-
-                if display_time is not None:
-                    nxt = self._observer.get_time_at_elevation(
-                        target_elevation=0.0,
-                        direction=1,
-                        search_start=display_time + timedelta(seconds=1),
-                        search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
-                        use_centre=use_centre_param,
-                    )
-                    following_rise = nxt if isinstance(nxt, datetime) else None
-
-            rise_azimuth = None
-            if display_time is not None:
-                _, az, _ = self._observer.position(display_time, apply_refraction=False)
-                if az is not None:
-                    rise_azimuth = round(float(az), 1)
-            
-            tomorrow_rise_azimuth = None
-            if tomorrow_time is not None:
-                _, az, _ = self._observer.position(tomorrow_time, apply_refraction=False)
-                if az is not None:
-                    tomorrow_rise_azimuth = round(float(az), 1)
-
-            # Calculate previous and next relative to "now", not display_time
-            previous_rise = None
-            next_attr: Optional[datetime] = None
-            
-            # Previous: most recent past rise (before now)
-            pr = self._observer.get_time_at_elevation(
-                target_elevation=0.0,
-                direction=1,
-                search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                search_end=now - timedelta(seconds=1),
-                use_centre=use_centre_param,
-                take_last_match=True,
-            )
-            previous_rise = pr if isinstance(pr, datetime) else None
-            
-            # Next: next future rise (after now)
-            na = self._observer.get_time_at_elevation(
-                target_elevation=0.0,
-                direction=1,
-                search_start=now + timedelta(seconds=1),
-                search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
-                use_centre=use_centre_param,
-            )
-            next_attr = na if isinstance(na, datetime) else None
-
-            if display_time is None:
-                state_basis = "none"
-
+            display_time = data["display_time"]
             self._attr_native_value = display_time
             self._attr_extra_state_attributes = {
-                "today": today_time.isoformat() if today_time else None,
-                "tomorrow": tomorrow_time.isoformat() if tomorrow_time else None,
-                "previous": previous_rise.isoformat() if previous_rise else None,
-                "next": next_attr.isoformat() if next_attr else None,
-                "state_basis": state_basis,
-                "rise_azimuth": rise_azimuth,
-                "tomorrow_rise_azimuth": tomorrow_rise_azimuth,
+                "today": data["today_time"].isoformat() if data["today_time"] else None,
+                "tomorrow": data["tomorrow_time"].isoformat() if data["tomorrow_time"] else None,
+                "previous": data["previous_rise"].isoformat() if data["previous_rise"] else None,
+                "next": data["next_attr"].isoformat() if data["next_attr"] else None,
+                "state_basis": data["state_basis"],
+                "rise_azimuth": data["rise_azimuth"],
+                "tomorrow_rise_azimuth": data["tomorrow_rise_azimuth"],
             }
-            
             self._attr_available = display_time is not None
             self.async_write_ha_state()
-            
+
         except Exception as e:
             _LOGGER.error(f"Error updating RiseSensor: {e}", exc_info=True)
             self._attr_available = False
@@ -1190,136 +1217,151 @@ class SetSensor(SensorEntity):
         # Schedule next midnight
         self._schedule_midnight_update(now)
     
+    def _compute(self, now: datetime, prior_native) -> dict:
+        """Run the set searches. Called in the executor, never on the loop."""
+        
+        # Create or reuse observer (create once, reuse for today's and tomorrow's calculations)
+        if self._observer is None:
+            # Create observer with wide search window (today to tomorrow)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow_end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+            self._observer = BodyObserver(
+                entry_id=self._entry_id,
+                body=self._body,
+                search_start=today_start,
+                search_end=tomorrow_end,
+                hass=self.hass
+            )
+        else:
+            # Update search window if needed
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            tomorrow_end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+            self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
+        
+        # Calculate date ranges for today and tomorrow
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_end = tomorrow_start + timedelta(days=1)
+        
+        # Get set times for today and tomorrow using the same observer
+        # use_centre=False only for Sun/Moon
+        use_centre_param = self._body_key not in ["sun", "moon"]
+        today_result = self._observer.get_time_at_elevation(
+            target_elevation=0.0,
+            direction=-1,
+            search_start=today_start,
+            search_end=today_end,
+            use_centre=use_centre_param
+        )
+        tomorrow_result = self._observer.get_time_at_elevation(
+            target_elevation=0.0,
+            direction=-1,
+            search_start=tomorrow_start,
+            search_end=tomorrow_end,
+            use_centre=use_centre_param
+        )
+        
+        # Convert results
+        today_time = today_result if isinstance(today_result, datetime) else None
+        tomorrow_time = tomorrow_result if isinstance(tomorrow_result, datetime) else None
+
+        state_basis = "today"
+        display_time: Optional[datetime] = None
+
+        if today_time is not None:
+            display_time = today_time
+            state_basis = "today"
+        else:
+            state_basis = "previous"
+            if isinstance(prior_native, datetime) and prior_native < today_start:
+                display_time = prior_native
+            else:
+                prev = self._observer.get_time_at_elevation(
+                    target_elevation=0.0,
+                    direction=-1,
+                    search_start=today_start - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                    search_end=today_start,
+                    use_centre=use_centre_param,
+                    take_last_match=True,
+                )
+                display_time = prev if isinstance(prev, datetime) else None
+
+        set_azimuth = None
+        if display_time is not None:
+            _, az, _ = self._observer.position(display_time, apply_refraction=False)
+            if az is not None:
+                set_azimuth = round(float(az), 1)
+        
+        tomorrow_set_azimuth = None
+        if tomorrow_time is not None:
+            _, az, _ = self._observer.position(tomorrow_time, apply_refraction=False)
+            if az is not None:
+                tomorrow_set_azimuth = round(float(az), 1)
+
+        # Calculate previous and next relative to "now", not display_time
+        previous_set = None
+        next_set: Optional[datetime] = None
+        
+        # Previous: most recent past set (before now)
+        ps = self._observer.get_time_at_elevation(
+            target_elevation=0.0,
+            direction=-1,
+            search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+            search_end=now - timedelta(seconds=1),
+            use_centre=use_centre_param,
+            take_last_match=True,
+        )
+        previous_set = ps if isinstance(ps, datetime) else None
+        
+        # Next: next future set (after now)
+        ns = self._observer.get_time_at_elevation(
+            target_elevation=0.0,
+            direction=-1,
+            search_start=now + timedelta(seconds=1),
+            search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
+            use_centre=use_centre_param,
+        )
+        next_set = ns if isinstance(ns, datetime) else None
+
+        if display_time is None:
+            state_basis = "none"
+
+        return {
+            "display_time": display_time,
+            "today_time": today_time,
+            "tomorrow_time": tomorrow_time,
+            "previous_set": previous_set,
+            "next_set": next_set,
+            "state_basis": state_basis,
+            "set_azimuth": set_azimuth,
+            "tomorrow_set_azimuth": tomorrow_set_azimuth,
+        }
+
     async def async_update(self, now=None) -> None:
         """Update the sensor state."""
         try:
-            # Use current time if not provided
             if now is None:
                 now = dt_util.now()
 
-            prior_native = self._attr_native_value
-            
-            # Create or reuse observer (create once, reuse for today's and tomorrow's calculations)
-            if self._observer is None:
-                # Create observer with wide search window (today to tomorrow)
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                tomorrow_end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
-                self._observer = BodyObserver(
-                    entry_id=self._entry_id,
-                    body=self._body,
-                    search_start=today_start,
-                    search_end=tomorrow_end,
-                    hass=self.hass
-                )
-            else:
-                # Update search window if needed
-                today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                tomorrow_end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
-                self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
-            
-            # Calculate date ranges for today and tomorrow
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = today_start + timedelta(days=1)
-            tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-            tomorrow_end = tomorrow_start + timedelta(days=1)
-            
-            # Get set times for today and tomorrow using the same observer
-            # use_centre=False only for Sun/Moon
-            use_centre_param = self._body_key not in ["sun", "moon"]
-            today_result = self._observer.get_time_at_elevation(
-                target_elevation=0.0,
-                direction=-1,
-                search_start=today_start,
-                search_end=today_end,
-                use_centre=use_centre_param
+            data = await self.hass.async_add_executor_job(
+                self._compute, now, self._attr_native_value
             )
-            tomorrow_result = self._observer.get_time_at_elevation(
-                target_elevation=0.0,
-                direction=-1,
-                search_start=tomorrow_start,
-                search_end=tomorrow_end,
-                use_centre=use_centre_param
-            )
-            
-            # Convert results
-            today_time = today_result if isinstance(today_result, datetime) else None
-            tomorrow_time = tomorrow_result if isinstance(tomorrow_result, datetime) else None
 
-            state_basis = "today"
-            display_time: Optional[datetime] = None
-
-            if today_time is not None:
-                display_time = today_time
-                state_basis = "today"
-            else:
-                state_basis = "previous"
-                if isinstance(prior_native, datetime) and prior_native < today_start:
-                    display_time = prior_native
-                else:
-                    prev = self._observer.get_time_at_elevation(
-                        target_elevation=0.0,
-                        direction=-1,
-                        search_start=today_start - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                        search_end=today_start,
-                        use_centre=use_centre_param,
-                        take_last_match=True,
-                    )
-                    display_time = prev if isinstance(prev, datetime) else None
-
-            set_azimuth = None
-            if display_time is not None:
-                _, az, _ = self._observer.position(display_time, apply_refraction=False)
-                if az is not None:
-                    set_azimuth = round(float(az), 1)
-            
-            tomorrow_set_azimuth = None
-            if tomorrow_time is not None:
-                _, az, _ = self._observer.position(tomorrow_time, apply_refraction=False)
-                if az is not None:
-                    tomorrow_set_azimuth = round(float(az), 1)
-
-            # Calculate previous and next relative to "now", not display_time
-            previous_set = None
-            next_set: Optional[datetime] = None
-            
-            # Previous: most recent past set (before now)
-            ps = self._observer.get_time_at_elevation(
-                target_elevation=0.0,
-                direction=-1,
-                search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                search_end=now - timedelta(seconds=1),
-                use_centre=use_centre_param,
-                take_last_match=True,
-            )
-            previous_set = ps if isinstance(ps, datetime) else None
-            
-            # Next: next future set (after now)
-            ns = self._observer.get_time_at_elevation(
-                target_elevation=0.0,
-                direction=-1,
-                search_start=now + timedelta(seconds=1),
-                search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS),
-                use_centre=use_centre_param,
-            )
-            next_set = ns if isinstance(ns, datetime) else None
-
-            if display_time is None:
-                state_basis = "none"
-
+            display_time = data["display_time"]
             self._attr_native_value = display_time
             self._attr_extra_state_attributes = {
-                "today": today_time.isoformat() if today_time else None,
-                "tomorrow": tomorrow_time.isoformat() if tomorrow_time else None,
-                "previous": previous_set.isoformat() if previous_set else None,
-                "next": next_set.isoformat() if next_set else None,
-                "state_basis": state_basis,
-                "set_azimuth": set_azimuth,
-                "tomorrow_set_azimuth": tomorrow_set_azimuth,
+                "today": data["today_time"].isoformat() if data["today_time"] else None,
+                "tomorrow": data["tomorrow_time"].isoformat() if data["tomorrow_time"] else None,
+                "previous": data["previous_set"].isoformat() if data["previous_set"] else None,
+                "next": data["next_set"].isoformat() if data["next_set"] else None,
+                "state_basis": data["state_basis"],
+                "set_azimuth": data["set_azimuth"],
+                "tomorrow_set_azimuth": data["tomorrow_set_azimuth"],
             }
-            
             self._attr_available = display_time is not None
             self.async_write_ha_state()
-            
+
         except Exception as e:
             _LOGGER.error(f"Error updating SetSensor: {e}", exc_info=True)
             self._attr_available = False
@@ -1390,122 +1432,134 @@ class TransitSensor(SensorEntity):
             _LOGGER.error(f"Error finding transit in window {window_start}: {e}", exc_info=True)
             return None
 
+    def _compute(self, now: datetime) -> dict:
+        """Run the transit searches. Called in the executor, never on the loop."""
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_end = tomorrow_start + timedelta(days=1)
+
+        if self._observer is None:
+            self._observer = BodyObserver(
+                entry_id=self._entry_id,
+                body=self._body,
+                search_start=today_start,
+                search_end=tomorrow_end,
+                hass=self.hass,
+            )
+        else:
+            self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
+
+        today_time = self._get_transit_for_window(today_start, today_end)
+        tomorrow_time = self._get_transit_for_window(tomorrow_start, tomorrow_end)
+
+        state_basis = "today"
+        display_time: Optional[datetime] = None
+        following_transit: Optional[datetime] = None
+
+        if today_time is not None:
+            display_time = today_time
+            state_basis = "today"
+        else:
+            # No transit in local calendar day: show next transit
+            state_basis = "next"
+            if tomorrow_time is not None:
+                display_time = tomorrow_time
+            else:
+                self._observer.set_search_window(
+                    search_start=today_end,
+                    search_end=today_end + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+                )
+                fwd = self._observer.next_transit
+                display_time = fwd if isinstance(fwd, datetime) else None
+
+            if display_time is not None:
+                self._observer.set_search_window(
+                    search_start=display_time + timedelta(seconds=1),
+                    search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+                )
+                nxt = self._observer.next_transit
+                following_transit = nxt if isinstance(nxt, datetime) else None
+
+        transit_elevation = None
+        if display_time is not None:
+            el, _, _ = self._observer.position(display_time, apply_refraction=False)
+            if el is not None:
+                transit_elevation = round(float(el), 1)
+
+        tomorrow_transit_elevation = None
+        if tomorrow_time is not None:
+            el, _, _ = self._observer.position(tomorrow_time, apply_refraction=False)
+            if el is not None:
+                tomorrow_transit_elevation = round(float(el), 1)
+
+        # Calculate previous and next relative to "now", not display_time
+        previous_transit = None
+        next_attr: Optional[datetime] = None
+        
+        # Previous: most recent past transit (before now)
+        self._observer.set_search_window(
+            search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+            search_end=now - timedelta(seconds=1)
+        )
+        pr = self._observer.next_transit
+        if pr is not None and pr < now:
+            # Keep searching forward until we find the last one before now
+            last_found = pr
+            search_pos = _advance_one_second(pr)
+            while search_pos < now:
+                self._observer.set_search_window(
+                    search_start=search_pos,
+                    search_end=now - timedelta(seconds=1)
+                )
+                candidate = self._observer.next_transit
+                if candidate is None or candidate >= now:
+                    break
+                if candidate <= last_found:
+                    break
+                last_found = candidate
+                search_pos = _advance_one_second(candidate)
+            previous_transit = last_found
+        
+        # Next: next future transit (after now)
+        self._observer.set_search_window(
+            search_start=now + timedelta(seconds=1),
+            search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+        )
+        next_attr = self._observer.next_transit
+
+        if display_time is None:
+            state_basis = "none"
+
+        return {
+            "display_time": display_time,
+            "today_time": today_time,
+            "tomorrow_time": tomorrow_time,
+            "previous_transit": previous_transit,
+            "next_attr": next_attr,
+            "state_basis": state_basis,
+            "transit_elevation": transit_elevation,
+            "tomorrow_transit_elevation": tomorrow_transit_elevation,
+        }
+
     async def async_update(self, now=None) -> None:
         """Update the sensor state."""
         try:
             if now is None:
                 now = dt_util.now()
 
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = today_start + timedelta(days=1)
-            tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-            tomorrow_end = tomorrow_start + timedelta(days=1)
+            data = await self.hass.async_add_executor_job(self._compute, now)
 
-            if self._observer is None:
-                self._observer = BodyObserver(
-                    entry_id=self._entry_id,
-                    body=self._body,
-                    search_start=today_start,
-                    search_end=tomorrow_end,
-                    hass=self.hass,
-                )
-            else:
-                self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
-
-            today_time = await self.hass.async_add_executor_job(
-                self._get_transit_for_window, today_start, today_end
-            )
-            tomorrow_time = await self.hass.async_add_executor_job(
-                self._get_transit_for_window, tomorrow_start, tomorrow_end
-            )
-
-            state_basis = "today"
-            display_time: Optional[datetime] = None
-            following_transit: Optional[datetime] = None
-
-            if today_time is not None:
-                display_time = today_time
-                state_basis = "today"
-            else:
-                # No transit in local calendar day: show next transit
-                state_basis = "next"
-                if tomorrow_time is not None:
-                    display_time = tomorrow_time
-                else:
-                    self._observer.set_search_window(
-                        search_start=today_end,
-                        search_end=today_end + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
-                    )
-                    fwd = self._observer.next_transit
-                    display_time = fwd if isinstance(fwd, datetime) else None
-
-                if display_time is not None:
-                    self._observer.set_search_window(
-                        search_start=display_time + timedelta(seconds=1),
-                        search_end=display_time + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
-                    )
-                    nxt = self._observer.next_transit
-                    following_transit = nxt if isinstance(nxt, datetime) else None
-
-            transit_elevation = None
-            if display_time is not None:
-                el, _, _ = self._observer.position(display_time, apply_refraction=False)
-                if el is not None:
-                    transit_elevation = round(float(el), 1)
-
-            tomorrow_transit_elevation = None
-            if tomorrow_time is not None:
-                el, _, _ = self._observer.position(tomorrow_time, apply_refraction=False)
-                if el is not None:
-                    tomorrow_transit_elevation = round(float(el), 1)
-
-            # Calculate previous and next relative to "now", not display_time
-            previous_transit = None
-            next_attr: Optional[datetime] = None
-            
-            # Previous: most recent past transit (before now)
-            self._observer.set_search_window(
-                search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                search_end=now - timedelta(seconds=1)
-            )
-            pr = self._observer.next_transit
-            if pr is not None and pr < now:
-                # Keep searching forward until we find the last one before now
-                last_found = pr
-                search_pos = _advance_one_second(pr)
-                while search_pos < now:
-                    self._observer.set_search_window(
-                        search_start=search_pos,
-                        search_end=now - timedelta(seconds=1)
-                    )
-                    candidate = self._observer.next_transit
-                    if candidate is None or candidate >= now:
-                        break
-                    if candidate <= last_found:
-                        break
-                    last_found = candidate
-                    search_pos = _advance_one_second(candidate)
-                previous_transit = last_found
-            
-            # Next: next future transit (after now)
-            self._observer.set_search_window(
-                search_start=now + timedelta(seconds=1),
-                search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
-            )
-            next_attr = self._observer.next_transit
-
-            if display_time is None:
-                state_basis = "none"
-
+            display_time = data["display_time"]
             self._attr_native_value = display_time
             self._attr_extra_state_attributes = {
-                "today": today_time.isoformat() if today_time else None,
-                "tomorrow": tomorrow_time.isoformat() if tomorrow_time else None,
-                "previous": previous_transit.isoformat() if previous_transit else None,
-                "next": next_attr.isoformat() if next_attr else None,
-                "state_basis": state_basis,
-                "transit_elevation": transit_elevation,
-                "tomorrow_transit_elevation": tomorrow_transit_elevation,
+                "today": data["today_time"].isoformat() if data["today_time"] else None,
+                "tomorrow": data["tomorrow_time"].isoformat() if data["tomorrow_time"] else None,
+                "previous": data["previous_transit"].isoformat() if data["previous_transit"] else None,
+                "next": data["next_attr"].isoformat() if data["next_attr"] else None,
+                "state_basis": data["state_basis"],
+                "transit_elevation": data["transit_elevation"],
+                "tomorrow_transit_elevation": data["tomorrow_transit_elevation"],
             }
             self._attr_available = display_time is not None
             self.async_write_ha_state()
@@ -1580,133 +1634,145 @@ class AntitransitSensor(SensorEntity):
             _LOGGER.error(f"Error finding antitransit in window {window_start}: {e}", exc_info=True)
             return None
 
+    def _compute(self, now: datetime, prior_native) -> dict:
+        """Run the antitransit searches. Called in the executor, never on the loop."""
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_end = tomorrow_start + timedelta(days=1)
+
+        if self._observer is None:
+            self._observer = BodyObserver(
+                entry_id=self._entry_id,
+                body=self._body,
+                search_start=today_start,
+                search_end=tomorrow_end,
+                hass=self.hass,
+            )
+        else:
+            self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
+
+        today_time = self._get_antitransit_for_window(today_start, today_end)
+        tomorrow_time = self._get_antitransit_for_window(tomorrow_start, tomorrow_end)
+
+        state_basis = "today"
+        display_time: Optional[datetime] = None
+
+        if today_time is not None:
+            display_time = today_time
+            state_basis = "today"
+        else:
+            # No antitransit in local calendar day: show previous antitransit
+            state_basis = "previous"
+            if isinstance(prior_native, datetime) and prior_native < today_start:
+                display_time = prior_native
+            else:
+                self._observer.set_search_window(
+                    search_start=today_start - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+                    search_end=today_start
+                )
+                prev = self._observer.next_antitransit
+                # Find the last antitransit before today_start
+                if prev is not None and prev < today_start:
+                    last_found = prev
+                    search_pos = _advance_one_second(prev)
+                    while search_pos < today_start:
+                        self._observer.set_search_window(
+                            search_start=search_pos,
+                            search_end=today_start
+                        )
+                        candidate = self._observer.next_antitransit
+                        if candidate is None or candidate >= today_start:
+                            break
+                        if candidate <= last_found:
+                            break
+                        last_found = candidate
+                        search_pos = _advance_one_second(candidate)
+                    display_time = last_found
+                else:
+                    display_time = prev if isinstance(prev, datetime) else None
+
+        antitransit_elevation = None
+        if display_time is not None:
+            el, _, _ = self._observer.position(display_time, apply_refraction=False)
+            if el is not None:
+                antitransit_elevation = round(float(el), 1)
+
+        tomorrow_antitransit_elevation = None
+        if tomorrow_time is not None:
+            el, _, _ = self._observer.position(tomorrow_time, apply_refraction=False)
+            if el is not None:
+                tomorrow_antitransit_elevation = round(float(el), 1)
+
+        # Calculate previous and next relative to "now", not display_time
+        previous_antitransit = None
+        next_antitransit: Optional[datetime] = None
+        
+        # Previous: most recent past antitransit (before now)
+        self._observer.set_search_window(
+            search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
+            search_end=now - timedelta(seconds=1)
+        )
+        ps = self._observer.next_antitransit
+        if ps is not None and ps < now:
+            # Keep searching forward until we find the last one before now
+            last_found = ps
+            search_pos = _advance_one_second(ps)
+            while search_pos < now:
+                self._observer.set_search_window(
+                    search_start=search_pos,
+                    search_end=now - timedelta(seconds=1)
+                )
+                candidate = self._observer.next_antitransit
+                if candidate is None or candidate >= now:
+                    break
+                if candidate <= last_found:
+                    break
+                last_found = candidate
+                search_pos = _advance_one_second(candidate)
+            previous_antitransit = last_found
+        
+        # Next: next future antitransit (after now)
+        self._observer.set_search_window(
+            search_start=now + timedelta(seconds=1),
+            search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
+        )
+        next_antitransit = self._observer.next_antitransit
+
+        if display_time is None:
+            state_basis = "none"
+
+        return {
+            "display_time": display_time,
+            "today_time": today_time,
+            "tomorrow_time": tomorrow_time,
+            "previous_antitransit": previous_antitransit,
+            "next_antitransit": next_antitransit,
+            "state_basis": state_basis,
+            "antitransit_elevation": antitransit_elevation,
+            "tomorrow_antitransit_elevation": tomorrow_antitransit_elevation,
+        }
+
     async def async_update(self, now=None) -> None:
         """Update the sensor state."""
         try:
             if now is None:
                 now = dt_util.now()
 
-            prior_native = self._attr_native_value
-
-            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            today_end = today_start + timedelta(days=1)
-            tomorrow_start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-            tomorrow_end = tomorrow_start + timedelta(days=1)
-
-            if self._observer is None:
-                self._observer = BodyObserver(
-                    entry_id=self._entry_id,
-                    body=self._body,
-                    search_start=today_start,
-                    search_end=tomorrow_end,
-                    hass=self.hass,
-                )
-            else:
-                self._observer.set_search_window(search_start=today_start, search_end=tomorrow_end)
-
-            today_time = await self.hass.async_add_executor_job(
-                self._get_antitransit_for_window, today_start, today_end
-            )
-            tomorrow_time = await self.hass.async_add_executor_job(
-                self._get_antitransit_for_window, tomorrow_start, tomorrow_end
+            data = await self.hass.async_add_executor_job(
+                self._compute, now, self._attr_native_value
             )
 
-            state_basis = "today"
-            display_time: Optional[datetime] = None
-
-            if today_time is not None:
-                display_time = today_time
-                state_basis = "today"
-            else:
-                # No antitransit in local calendar day: show previous antitransit
-                state_basis = "previous"
-                if isinstance(prior_native, datetime) and prior_native < today_start:
-                    display_time = prior_native
-                else:
-                    self._observer.set_search_window(
-                        search_start=today_start - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                        search_end=today_start
-                    )
-                    prev = self._observer.next_antitransit
-                    # Find the last antitransit before today_start
-                    if prev is not None and prev < today_start:
-                        last_found = prev
-                        search_pos = _advance_one_second(prev)
-                        while search_pos < today_start:
-                            self._observer.set_search_window(
-                                search_start=search_pos,
-                                search_end=today_start
-                            )
-                            candidate = self._observer.next_antitransit
-                            if candidate is None or candidate >= today_start:
-                                break
-                            if candidate <= last_found:
-                                break
-                            last_found = candidate
-                            search_pos = _advance_one_second(candidate)
-                        display_time = last_found
-                    else:
-                        display_time = prev if isinstance(prev, datetime) else None
-
-            antitransit_elevation = None
-            if display_time is not None:
-                el, _, _ = self._observer.position(display_time, apply_refraction=False)
-                if el is not None:
-                    antitransit_elevation = round(float(el), 1)
-
-            tomorrow_antitransit_elevation = None
-            if tomorrow_time is not None:
-                el, _, _ = self._observer.position(tomorrow_time, apply_refraction=False)
-                if el is not None:
-                    tomorrow_antitransit_elevation = round(float(el), 1)
-
-            # Calculate previous and next relative to "now", not display_time
-            previous_antitransit = None
-            next_antitransit: Optional[datetime] = None
-            
-            # Previous: most recent past antitransit (before now)
-            self._observer.set_search_window(
-                search_start=now - timedelta(days=_RISE_SET_PRIOR_WINDOW_DAYS),
-                search_end=now - timedelta(seconds=1)
-            )
-            ps = self._observer.next_antitransit
-            if ps is not None and ps < now:
-                # Keep searching forward until we find the last one before now
-                last_found = ps
-                search_pos = _advance_one_second(ps)
-                while search_pos < now:
-                    self._observer.set_search_window(
-                        search_start=search_pos,
-                        search_end=now - timedelta(seconds=1)
-                    )
-                    candidate = self._observer.next_antitransit
-                    if candidate is None or candidate >= now:
-                        break
-                    if candidate <= last_found:
-                        break
-                    last_found = candidate
-                    search_pos = _advance_one_second(candidate)
-                previous_antitransit = last_found
-            
-            # Next: next future antitransit (after now)
-            self._observer.set_search_window(
-                search_start=now + timedelta(seconds=1),
-                search_end=now + timedelta(days=_RISE_SET_FORWARD_WINDOW_DAYS)
-            )
-            next_antitransit = self._observer.next_antitransit
-
-            if display_time is None:
-                state_basis = "none"
-
+            display_time = data["display_time"]
             self._attr_native_value = display_time
             self._attr_extra_state_attributes = {
-                "today": today_time.isoformat() if today_time else None,
-                "tomorrow": tomorrow_time.isoformat() if tomorrow_time else None,
-                "previous": previous_antitransit.isoformat() if previous_antitransit else None,
-                "next": next_antitransit.isoformat() if next_antitransit else None,
-                "state_basis": state_basis,
-                "antitransit_elevation": antitransit_elevation,
-                "tomorrow_antitransit_elevation": tomorrow_antitransit_elevation,
+                "today": data["today_time"].isoformat() if data["today_time"] else None,
+                "tomorrow": data["tomorrow_time"].isoformat() if data["tomorrow_time"] else None,
+                "previous": data["previous_antitransit"].isoformat() if data["previous_antitransit"] else None,
+                "next": data["next_antitransit"].isoformat() if data["next_antitransit"] else None,
+                "state_basis": data["state_basis"],
+                "antitransit_elevation": data["antitransit_elevation"],
+                "tomorrow_antitransit_elevation": data["tomorrow_antitransit_elevation"],
             }
             self._attr_available = display_time is not None
             self.async_write_ha_state()
